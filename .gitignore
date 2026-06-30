@@ -1,0 +1,18 @@
+# WordPress plugin
+wp-plugin/backups/
+wp-plugin/*.log
+
+# Windows client
+windows-client/config.json
+windows-client/logs/
+windows-client/backups/
+windows-client/*.pyc
+windows-client/__pycache__/
+windows-client/dist/
+windows-client/build/
+windows-client/*.spec
+
+# General
+*.log
+.DS_Store
+Thumbs.db

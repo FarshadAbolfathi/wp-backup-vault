@@ -1,0 +1,330 @@
+/* WP Vault Bridge — Admin Styles
+ * Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
+ */
+
+body {
+    direction: rtl;
+}
+
+.wvb-wrap {
+    max-width: 1200px;
+    padding: 20px;
+}
+
+.wvb-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #0073aa;
+    padding-bottom: 15px;
+}
+
+.wvb-header h1 {
+    color: #0073aa;
+    margin: 0;
+}
+
+.wvb-tabs {
+    display: flex;
+    border-bottom: 1px solid #ccc;
+    margin-bottom: 20px;
+    gap: 0;
+}
+
+.wvb-tab {
+    padding: 10px 20px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-bottom: none;
+    background: #f1f1f1;
+    color: #555;
+    font-size: 14px;
+    transition: 0.2s;
+}
+
+.wvb-tab:hover {
+    background: #fff;
+    color: #0073aa;
+}
+
+.wvb-tab.active {
+    background: #fff;
+    color: #0073aa;
+    border-color: #ccc;
+    border-bottom-color: #fff;
+    font-weight: bold;
+}
+
+.wvb-tab-content {
+    display: none;
+}
+
+.wvb-tab-content.active {
+    display: block;
+}
+
+.wvb-card {
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.wvb-card h2 {
+    margin-top: 0;
+    color: #23282d;
+    font-size: 16px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+.wvb-progress-wrap {
+    margin: 15px 0;
+}
+
+.wvb-progress {
+    width: 100%;
+    height: 24px;
+    background: #f1f1f1;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #ddd;
+}
+
+.wvb-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #0073aa, #00a0d2);
+    border-radius: 12px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.wvb-progress-bar.animating {
+    animation: wvb-pulse 1.5s infinite;
+}
+
+@keyframes wvb-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.7; }
+}
+
+.wvb-api-key-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.wvb-api-key-display {
+    font-family: monospace;
+    font-size: 16px;
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    padding: 8px 12px;
+    border-radius: 3px;
+    flex: 1;
+}
+
+.wvb-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 16px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13px;
+    border: none;
+    transition: 0.15s;
+}
+
+.wvb-btn-primary {
+    background: #0073aa;
+    color: #fff;
+}
+
+.wvb-btn-primary:hover {
+    background: #005177;
+}
+
+.wvb-btn-danger {
+    background: #d63638;
+    color: #fff;
+}
+
+.wvb-btn-danger:hover {
+    background: #a52022;
+}
+
+.wvb-btn-secondary {
+    background: #f1f1f1;
+    color: #23282d;
+    border: 1px solid #ccc;
+}
+
+.wvb-btn-secondary:hover {
+    background: #e8e8e8;
+}
+
+.wvb-form-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.wvb-form-table th {
+    text-align: right;
+    padding: 10px 15px 10px 0;
+    width: 200px;
+    vertical-align: top;
+    padding-top: 15px;
+    font-weight: 600;
+    color: #23282d;
+}
+
+.wvb-form-table td {
+    padding: 10px 0;
+}
+
+.wvb-form-table input[type="number"] {
+    width: 80px;
+    padding: 6px 8px;
+}
+
+.wvb-form-table input[type="time"] {
+    padding: 6px 8px;
+}
+
+.wvb-schedule-times {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.wvb-schedule-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.wvb-remove-time {
+    background: none;
+    border: none;
+    color: #d63638;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 4px;
+}
+
+.wvb-backups-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.wvb-backups-table th {
+    background: #f1f1f1;
+    padding: 10px 12px;
+    text-align: right;
+    border-bottom: 2px solid #ccc;
+    font-weight: 600;
+    color: #23282d;
+}
+
+.wvb-backups-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #eee;
+    vertical-align: middle;
+}
+
+.wvb-backups-table tr:hover td {
+    background: #f9f9f9;
+}
+
+.wvb-status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.wvb-status-badge.complete {
+    background: #d4edda;
+    color: #155724;
+}
+
+.wvb-status-badge.running {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.wvb-status-badge.failed {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.wvb-status-badge.unknown {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+#log-content {
+    font-family: monospace;
+    font-size: 12px;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 15px;
+    border-radius: 4px;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    direction: ltr;
+    text-align: left;
+}
+
+.wvb-notice {
+    padding: 10px 15px;
+    border-radius: 3px;
+    margin-bottom: 15px;
+}
+
+.wvb-notice-success {
+    background: #d4edda;
+    color: #155724;
+    border-left: 4px solid #28a745;
+}
+
+.wvb-footer {
+    margin-top: 30px;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+    color: #777;
+    font-size: 12px;
+    text-align: center;
+}
+
+.wvb-footer a {
+    color: #0073aa;
+}
+
+@media (max-width: 768px) {
+    .wvb-wrap {
+        padding: 10px;
+    }
+
+    .wvb-form-table th {
+        display: block;
+        width: auto;
+    }
+
+    .wvb-form-table td {
+        display: block;
+    }
+
+    .wvb-api-key-wrap {
+        flex-direction: column;
+    }
+}

@@ -1,0 +1,17 @@
+{
+  "sites": [
+    {
+      "id": "site-001",
+      "name": "My WordPress Site",
+      "url": "https://example.com",
+      "api_key": "YOUR_API_KEY_HERE",
+      "save_path": "C:\\Backups\\site-001",
+      "retention_count": 5,
+      "check_interval_minutes": 60
+    }
+  ],
+  "global": {
+    "log_level": "INFO",
+    "max_concurrent_downloads": 2
+  }
+}
