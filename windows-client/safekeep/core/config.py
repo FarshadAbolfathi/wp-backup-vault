@@ -1,128 +1,159 @@
 """
-SafeKeep — Configuration Manager
+SafeKeep configuration manager with encrypted persistence.
 Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
 """
-import json
 import os
-import sys
+import json
+import logging
+import copy
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import base64
-import platform
-
-
-def _get_machine_key() -> bytes:
-    """Derive a machine-specific encryption key."""
-    if platform.system() == 'Windows':
-        import winreg
-        try:
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
-                                 r'SOFTWARE\Microsoft\Cryptography')
-            machine_guid, _ = winreg.QueryValueEx(key, 'MachineGuid')
-            winreg.CloseKey(key)
-            seed = machine_guid.encode()
-        except Exception:
-            seed = b'safekeep-default-seed'
-    else:
-        seed = b'safekeep-default-seed'
-
-    salt = b'safekeep-salt-v1'
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=salt,
-        iterations=100_000,
-    )
-    raw = kdf.derive(seed)
-    return base64.urlsafe_b64encode(raw)
+from safekeep.utils.crypto import encrypt_data, decrypt_data
+from safekeep.utils.logger import setup_logger
 
 
 class Config:
-    """Manages encrypted application configuration."""
+    """
+    Manages application configuration stored in an encrypted file.
 
-    DEFAULT_CONFIG: Dict[str, Any] = {
-        'sites': [],
-        'global': {
-            'log_level': 'INFO',
-            'max_concurrent_downloads': 2,
-        },
-    }
+    Configuration is encrypted with a machine-bound key so that the
+    config file cannot be read on a different machine.
+    """
 
     def __init__(self):
-        self._config: Dict[str, Any] = dict(self.DEFAULT_CONFIG)
-        self._fernet: Optional[Fernet] = None
-        self._config_path: Path = self._get_config_path()
-
-    @staticmethod
-    def _get_config_path() -> Path:
-        if platform.system() == 'Windows':
-            base = Path(os.environ.get('APPDATA', Path.home()))
-        else:
-            base = Path.home() / '.config'
-        config_dir = base / 'SafeKeep'
-        config_dir.mkdir(parents=True, exist_ok=True)
-        return config_dir / 'config.enc'
-
-    def _get_fernet(self) -> Fernet:
-        if self._fernet is None:
-            self._fernet = Fernet(_get_machine_key())
-        return self._fernet
+        self.logger = setup_logger('safekeep.config')
+        self._config_path = (
+            Path(os.environ.get('APPDATA', str(Path.home()))) / 'SafeKeep' / 'config.enc'
+        )
+        self._data: dict = {
+            'sites': [],
+            'global': {
+                'log_level': 'INFO',
+                'max_concurrent_downloads': 2,
+            },
+        }
 
     def load_config(self) -> None:
-        """Load and decrypt config from disk."""
+        """Load and decrypt configuration from disk, falling back to defaults."""
         if not self._config_path.exists():
-            self._config = dict(self.DEFAULT_CONFIG)
+            self.logger.info('No config file found; using defaults.')
             return
+
         try:
-            encrypted = self._config_path.read_bytes()
-            decrypted = self._get_fernet().decrypt(encrypted)
-            self._config = json.loads(decrypted.decode('utf-8'))
-        except Exception:
-            self._config = dict(self.DEFAULT_CONFIG)
+            encrypted = self._config_path.read_text(encoding='utf-8')
+            plaintext = decrypt_data(encrypted)
+            loaded: dict = json.loads(plaintext)
+            # Merge loaded data into defaults so new keys survive upgrades
+            if 'sites' in loaded:
+                self._data['sites'] = loaded['sites']
+            if 'global' in loaded:
+                self._data['global'].update(loaded['global'])
+            self.logger.info('Configuration loaded successfully.')
+        except ValueError as exc:
+            self.logger.warning(f'Config decryption failed: {exc}. Using defaults.')
+        except json.JSONDecodeError as exc:
+            self.logger.warning(f'Config JSON parse error: {exc}. Using defaults.')
+        except Exception as exc:
+            self.logger.error(f'Unexpected error loading config: {exc}. Using defaults.')
 
     def save_config(self) -> None:
-        """Encrypt and save config to disk."""
-        raw = json.dumps(self._config, ensure_ascii=False, indent=2).encode('utf-8')
-        encrypted = self._get_fernet().encrypt(raw)
-        self._config_path.write_bytes(encrypted)
+        """Encrypt and persist the current configuration to disk."""
+        try:
+            self._config_path.parent.mkdir(parents=True, exist_ok=True)
+            plaintext = json.dumps(self._data, ensure_ascii=False, indent=2)
+            encrypted = encrypt_data(plaintext)
+            self._config_path.write_text(encrypted, encoding='utf-8')
+            self.logger.info('Configuration saved.')
+        except Exception as exc:
+            self.logger.error(f'Failed to save configuration: {exc}')
 
-    def get_sites(self) -> List[Dict[str, Any]]:
-        return self._config.get('sites', [])
+    # ------------------------------------------------------------------
+    # Sites
+    # ------------------------------------------------------------------
 
-    def get_global(self) -> Dict[str, Any]:
-        return self._config.get('global', self.DEFAULT_CONFIG['global'])
+    def get_sites(self) -> list:
+        """Return a deep copy of the sites list."""
+        return copy.deepcopy(self._data['sites'])
 
-    def add_site(self, site: Dict[str, Any]) -> None:
-        sites = self.get_sites()
-        sites.append(site)
-        self._config['sites'] = sites
+    def get_site(self, site_id: str) -> 'dict | None':
+        """Return a copy of a site dict by its id, or None if not found."""
+        for site in self._data['sites']:
+            if site.get('id') == site_id:
+                return copy.deepcopy(site)
+        return None
+
+    def add_site(self, site: dict) -> None:
+        """
+        Add a new site to the configuration.
+
+        Args:
+            site: Site dict with required keys: id, name, url, api_key, save_path.
+
+        Raises:
+            ValueError: If required fields are missing or a site with the same id exists.
+        """
+        required = ('id', 'name', 'url', 'api_key', 'save_path')
+        missing = [k for k in required if not site.get(k)]
+        if missing:
+            raise ValueError(f'Site is missing required fields: {missing}')
+        if any(s['id'] == site['id'] for s in self._data['sites']):
+            raise ValueError(f'A site with id "{site["id"]}" already exists.')
+        self._data['sites'].append(copy.deepcopy(site))
         self.save_config()
+        self.logger.info(f'Site "{site["name"]}" added.')
 
-    def update_site(self, site_id: str, updates: Dict[str, Any]) -> bool:
-        sites = self.get_sites()
-        for i, s in enumerate(sites):
-            if s.get('id') == site_id:
-                sites[i] = {**s, **updates}
-                self._config['sites'] = sites
+    def update_site(self, site_id: str, updates: dict) -> None:
+        """
+        Update fields of an existing site.
+
+        Args:
+            site_id: ID of the site to update.
+            updates: Dict of fields to update (id cannot be changed).
+
+        Raises:
+            ValueError: If the site is not found.
+        """
+        updates.pop('id', None)  # Do not allow changing the id
+        for idx, site in enumerate(self._data['sites']):
+            if site.get('id') == site_id:
+                self._data['sites'][idx].update(updates)
                 self.save_config()
-                return True
-        return False
+                self.logger.info(f'Site "{site_id}" updated.')
+                return
+        raise ValueError(f'Site with id "{site_id}" not found.')
 
-    def remove_site(self, site_id: str) -> bool:
-        sites = self.get_sites()
-        original_len = len(sites)
-        self._config['sites'] = [s for s in sites if s.get('id') != site_id]
-        if len(self._config['sites']) < original_len:
-            self.save_config()
-            return True
-        return False
+    def remove_site(self, site_id: str) -> None:
+        """
+        Remove a site from the configuration.
 
-    def update_global(self, updates: Dict[str, Any]) -> None:
-        global_cfg = self.get_global()
-        global_cfg.update(updates)
-        self._config['global'] = global_cfg
+        Args:
+            site_id: ID of the site to remove.
+
+        Raises:
+            ValueError: If the site is not found.
+        """
+        original_count = len(self._data['sites'])
+        self._data['sites'] = [s for s in self._data['sites'] if s.get('id') != site_id]
+        if len(self._data['sites']) == original_count:
+            raise ValueError(f'Site with id "{site_id}" not found.')
         self.save_config()
+        self.logger.info(f'Site "{site_id}" removed.')
+
+    # ------------------------------------------------------------------
+    # Global settings
+    # ------------------------------------------------------------------
+
+    def get_global_settings(self) -> dict:
+        """Return a copy of the global settings dict."""
+        return copy.deepcopy(self._data['global'])
+
+    def update_global_settings(self, updates: dict) -> None:
+        """
+        Merge updates into the global settings and persist.
+
+        Args:
+            updates: Dict of settings to update.
+        """
+        self._data['global'].update(updates)
+        self.save_config()
+        self.logger.info('Global settings updated.')

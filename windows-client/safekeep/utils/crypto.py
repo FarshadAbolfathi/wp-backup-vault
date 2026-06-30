@@ -1,54 +1,106 @@
 """
-SafeKeep — Encrypted config storage using Fernet + machine-derived key.
-API keys are never stored in plain text.
-
-Author: Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
+SafeKeep encryption/decryption utilities using machine-bound keys.
+Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
 """
-
-import base64
-import hashlib
 import os
+import hashlib
+import base64
 import platform
-import socket
+import logging
 
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 
+logger = logging.getLogger('safekeep.crypto')
 
-def _machine_secret() -> bytes:
-    """Derive a stable secret from machine-specific attributes."""
-    node = platform.node() or socket.gethostname() or "safekeep-host"
-    user = os.environ.get("USERNAME") or os.environ.get("USER") or "safekeep-user"
-    raw = f"safekeep:{node}:{user}".encode("utf-8")
-    # Use a fixed application salt so the same machine always produces the same key.
-    salt = b"SafeKeepSalt_v1_"
+
+def get_machine_id() -> str:
+    """
+    Return a stable machine-specific identifier.
+
+    On Windows, reads MachineGuid from the registry.
+    Falls back to platform.node() on any failure.
+    """
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r'SOFTWARE\Microsoft\Cryptography',
+        )
+        value, _ = winreg.QueryValueEx(key, 'MachineGuid')
+        winreg.CloseKey(key)
+        return str(value)
+    except Exception as exc:
+        logger.debug(f'Registry read failed, using fallback machine ID: {exc}')
+        return platform.node()
+
+
+def derive_key(machine_id: str) -> bytes:
+    """
+    Derive a Fernet-compatible key from the machine ID using PBKDF2-HMAC-SHA256.
+
+    Args:
+        machine_id: Stable machine identifier string.
+
+    Returns:
+        URL-safe base64-encoded 32-byte derived key.
+    """
+    salt = hashlib.sha256(b'SafeKeep-WP-Backup-Vault-v1').digest()
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
-        iterations=200_000,
+        iterations=100_000,
     )
-    return base64.urlsafe_b64encode(kdf.derive(raw))
+    raw = kdf.derive(machine_id.encode('utf-8'))
+    return base64.urlsafe_b64encode(raw)
 
 
-def _get_fernet() -> Fernet:
-    return Fernet(_machine_secret())
+def encrypt_data(data: str) -> str:
+    """
+    Encrypt a plaintext string using a machine-bound Fernet key.
+
+    Args:
+        data: Plaintext string to encrypt.
+
+    Returns:
+        Encrypted token as a string.
+
+    Raises:
+        Exception: On encryption failure.
+    """
+    try:
+        machine_id = get_machine_id()
+        key = derive_key(machine_id)
+        fernet = Fernet(key)
+        return fernet.encrypt(data.encode('utf-8')).decode('utf-8')
+    except Exception as exc:
+        logger.error(f'encrypt_data failed: {exc}')
+        raise
 
 
-def encrypt_data(plaintext: bytes) -> bytes:
-    """Encrypt arbitrary bytes."""
-    return _get_fernet().encrypt(plaintext)
+def decrypt_data(token: str) -> str:
+    """
+    Decrypt a Fernet token using the machine-bound key.
 
+    Args:
+        token: Encrypted token string.
 
-def decrypt_data(ciphertext: bytes) -> bytes:
-    """Decrypt bytes. Raises InvalidToken on tampered/wrong-machine data."""
-    return _get_fernet().decrypt(ciphertext)
+    Returns:
+        Decrypted plaintext string.
 
-
-def encrypt_text(text: str) -> bytes:
-    return encrypt_data(text.encode("utf-8"))
-
-
-def decrypt_text(ciphertext: bytes) -> str:
-    return decrypt_data(ciphertext).decode("utf-8")
+    Raises:
+        ValueError: If the token is invalid or from a different machine.
+        Exception: On other decryption failures.
+    """
+    try:
+        machine_id = get_machine_id()
+        key = derive_key(machine_id)
+        fernet = Fernet(key)
+        return fernet.decrypt(token.encode('utf-8')).decode('utf-8')
+    except InvalidToken:
+        raise ValueError('Decryption failed — config may be from different machine')
+    except Exception as exc:
+        logger.error(f'decrypt_data failed: {exc}')
+        raise

@@ -1,95 +1,82 @@
 """
-SafeKeep — About dialog
-
-Author: Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
+SafeKeep about dialog — application information and credits.
+Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
 """
+import logging
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QLabel, QPushButton, QVBoxLayout,
+    QDialog, QVBoxLayout, QLabel, QDialogButtonBox,
 )
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
-from safekeep import __version__, __author__, __author_url__
+from safekeep.utils.logger import setup_logger
 
 
 class AboutDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("درباره SafeKeep")
-        self.setMinimumWidth(360)
-        self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-        self._build_ui()
+    """Displays application version, author, and links."""
 
-    def _build_ui(self):
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.logger = setup_logger('safekeep.gui.about_dialog')
+        self.setWindowTitle('درباره SafeKeep')
+        self.setFixedSize(400, 300)
+        self.setLayoutDirection(Qt.RightToLeft)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        """Build the about dialog layout."""
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
+        layout.setContentsMargins(24, 20, 24, 20)
 
-        # App name
-        title = QLabel("SafeKeep")
+        # Application title
+        lbl_title = QLabel('SafeKeep')
         title_font = QFont()
-        title_font.setPointSize(20)
+        title_font.setPointSize(22)
         title_font.setBold(True)
-        title.setFont(title_font)
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        lbl_title.setFont(title_font)
+        lbl_title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl_title)
 
         # Version
-        version_label = QLabel(f"نسخه {__version__}")
-        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        version_label.setStyleSheet("color: #666;")
-        layout.addWidget(version_label)
+        lbl_version = QLabel('نسخه ۱.۰.۰')
+        lbl_version.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl_version)
 
         # Description
-        desc = QLabel("مدیریت بک‌آپ وردپرس برای ویندوز سرور\nدانلود خودکار و ایمن از سایت‌های وردپرس")
-        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        desc.setWordWrap(True)
-        layout.addWidget(desc)
+        lbl_desc = QLabel('سیستم مدیریت بک‌آپ وردپرس با رابط فارسی')
+        lbl_desc.setAlignment(Qt.AlignCenter)
+        lbl_desc.setWordWrap(True)
+        layout.addWidget(lbl_desc)
 
-        layout.addSpacing(8)
-
-        # Author
-        author_label = QLabel(f"سازنده: {__author__}")
-        author_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(author_label)
-
-        # LinkedIn link
-        linkedin_btn = QPushButton("LinkedIn: Farshad Abolfathi")
-        linkedin_btn.setFlat(True)
-        linkedin_btn.setStyleSheet(
-            "color: #0073aa; text-decoration: underline; border: none; font-size: 13px;"
+        # Author link
+        lbl_author = QLabel(
+            'توسعه‌دهنده: <a href="https://www.linkedin.com/in/farshad-abolfathi/">'
+            'Farshad Abolfathi</a>'
         )
-        linkedin_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        linkedin_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(__author_url__))
-        )
-        linkedin_btn.setAlignment = None  # QPushButton doesn't have this, skip
-        layout.addWidget(linkedin_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        lbl_author.setOpenExternalLinks(True)
+        lbl_author.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl_author)
 
-        # GitHub
-        github_btn = QPushButton("GitHub: farshadabolfathi/wp-backup-vault")
-        github_btn.setFlat(True)
-        github_btn.setStyleSheet(
-            "color: #0073aa; text-decoration: underline; border: none; font-size: 12px;"
+        # GitHub link
+        lbl_github = QLabel(
+            'مخزن کد: <a href="https://github.com/farshadabolfathi/wp-backup-vault">'
+            'GitHub — wp-backup-vault</a>'
         )
-        github_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        github_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(
-                QUrl("https://github.com/farshadabolfathi/wp-backup-vault")
-            )
-        )
-        layout.addWidget(github_btn, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        layout.addSpacing(8)
+        lbl_github.setOpenExternalLinks(True)
+        lbl_github.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl_github)
 
         # License
-        license_label = QLabel("لایسنس: MIT")
-        license_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        license_label.setStyleSheet("color: #888; font-size: 11px;")
-        layout.addWidget(license_label)
+        lbl_license = QLabel('MIT License')
+        lbl_license.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl_license)
+
+        layout.addStretch()
 
         # Close button
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.button(QDialogButtonBox.StandardButton.Close).setText("بستن")
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.button(QDialogButtonBox.Close).setText('بستن')
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)

@@ -1,178 +1,167 @@
 """
-SafeKeep — Site Manager
+SafeKeep site manager — orchestrates multi-site backup operations.
 Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
 """
-import hashlib
 import logging
-import os
-import threading
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
-
 import requests
 
-
-logger = logging.getLogger(__name__)
-
-
-class DownloadProgress:
-    """Tracks download progress for a chunk."""
-    def __init__(self, filename: str, total_size: int):
-        self.filename = filename
-        self.total_size = total_size
-        self.downloaded = 0
-        self.complete = False
-        self.error: Optional[str] = None
-
-    @property
-    def percent(self) -> float:
-        if self.total_size <= 0:
-            return 0.0
-        return min(100.0, self.downloaded / self.total_size * 100)
+from safekeep.core.backup_manager import BackupManager
+from safekeep.core.downloader import ChunkDownloader
+from safekeep.utils.logger import setup_logger
 
 
 class SiteManager:
-    """Manages backup downloading for all configured sites."""
+    """
+    High-level interface for managing backup operations across all configured sites.
 
-    CHUNK_SIZE = 8192  # bytes per read
+    Delegates per-site work to BackupManager and exposes simple methods
+    suitable for consumption by the GUI and scheduler.
+    """
 
-    def __init__(self, config):
-        self._config = config
-        self._lock = threading.Lock()
-        self._active_downloads: Dict[str, DownloadProgress] = {}
-
-    # ------------------------------------------------------------------
-    # API helpers
-    # ------------------------------------------------------------------
-
-    def _api_get(self, site: Dict[str, Any], path: str,
-                 stream: bool = False, range_header: Optional[str] = None):
-        url = site['url'].rstrip('/') + '/wp-json/wp-vault-bridge/v1/' + path.lstrip('/')
-        headers = {'X-API-Key': site['api_key']}
-        if range_header:
-            headers['Range'] = range_header
-        resp = requests.get(url, headers=headers, stream=stream, timeout=30)
-        resp.raise_for_status()
-        return resp
+    def __init__(self, config) -> None:
+        self.config = config
+        self.logger = setup_logger('safekeep.site_manager')
 
     # ------------------------------------------------------------------
-    # Backup listing
+    # Site CRUD
     # ------------------------------------------------------------------
 
-    def list_backups(self, site: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def get_all_sites(self) -> list:
+        """Return all configured sites."""
+        return self.config.get_sites()
+
+    def add_site(self, site: dict) -> None:
+        """Add a new site to the configuration."""
+        self.config.add_site(site)
+        self.logger.info(f'Site added: {site.get("name")}')
+
+    def update_site(self, site_id: str, updates: dict) -> None:
+        """Update an existing site's configuration."""
+        self.config.update_site(site_id, updates)
+        self.logger.info(f'Site updated: {site_id}')
+
+    def remove_site(self, site_id: str) -> None:
+        """Remove a site from the configuration."""
+        self.config.remove_site(site_id)
+        self.logger.info(f'Site removed: {site_id}')
+
+    # ------------------------------------------------------------------
+    # Connection test
+    # ------------------------------------------------------------------
+
+    def test_connection(self, site_id: str) -> 'tuple[bool, str]':
+        """
+        Verify that the API endpoint is reachable with the stored credentials.
+
+        Args:
+            site_id: ID of the site to test.
+
+        Returns:
+            (True, success_message) or (False, error_message).
+        """
         try:
-            resp = self._api_get(site, '/backups')
-            return resp.json()
-        except Exception as e:
-            logger.error(f"list_backups error for {site.get('name')}: {e}")
-            return []
+            site = self.config.get_site(site_id)
+            if site is None:
+                return (False, f'سایت با شناسه "{site_id}" یافت نشد.')
+            downloader = ChunkDownloader(site['url'], site['api_key'])
+            downloader.list_backups()
+            return (True, 'اتصال موفق بود')
+        except requests.exceptions.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 401:
+                return (False, 'کلید API نادرست است')
+            return (False, f'خطای HTTP: {exc}')
+        except requests.exceptions.ConnectionError:
+            return (False, 'اتصال برقرار نشد')
+        except Exception as exc:
+            self.logger.error(f'test_connection failed for {site_id}: {exc}')
+            return (False, str(exc))
 
-    def get_manifest(self, site: Dict[str, Any], backup_id: str) -> Optional[Dict[str, Any]]:
+    # ------------------------------------------------------------------
+    # Backup operations
+    # ------------------------------------------------------------------
+
+    def fetch_pending(self, site_id: str, progress_callback=None) -> int:
+        """
+        Download all pending backups for a site and apply retention.
+
+        Args:
+            site_id: ID of the site.
+            progress_callback: Optional callable forwarded to BackupManager.
+
+        Returns:
+            Number of backups successfully fetched.
+        """
         try:
-            resp = self._api_get(site, f'/backups/{backup_id}/manifest')
-            return resp.json()
-        except Exception as e:
-            logger.error(f"get_manifest error: {e}")
-            return None
+            site = self.config.get_site(site_id)
+            if site is None:
+                self.logger.error(f'fetch_pending: site "{site_id}" not found.')
+                return 0
+            manager = BackupManager(site)
+            pending = manager.get_pending_backups()
+            fetched = 0
+            for backup in pending:
+                backup_id = backup.get('backup_id') or backup.get('id')
+                if not backup_id:
+                    continue
+                if manager.fetch_backup(backup_id, progress_callback):
+                    fetched += 1
+                else:
+                    self.logger.warning(
+                        f'fetch_pending: failed to fetch backup {backup_id} '
+                        f'for site "{site.get("name")}".'
+                    )
+            manager.apply_local_retention()
+            return fetched
+        except Exception as exc:
+            self.logger.error(f'fetch_pending failed for site {site_id}: {exc}')
+            return 0
 
-    # ------------------------------------------------------------------
-    # Download
-    # ------------------------------------------------------------------
+    def get_site_status(self, site_id: str) -> dict:
+        """
+        Return a status summary dict for a site.
 
-    def download_backup(self, site: Dict[str, Any], backup_id: str,
-                        progress_callback: Optional[Callable] = None) -> bool:
-        manifest = self.get_manifest(site, backup_id)
-        if not manifest:
+        Args:
+            site_id: ID of the site.
+
+        Returns:
+            Status summary dict from BackupManager.get_status_summary().
+        """
+        try:
+            site = self.config.get_site(site_id)
+            if site is None:
+                return {}
+            manager = BackupManager(site)
+            return manager.get_status_summary()
+        except Exception as exc:
+            self.logger.error(f'get_site_status failed for {site_id}: {exc}')
+            return {}
+
+    def fetch_backup_by_id(
+        self,
+        site_id: str,
+        backup_id: str,
+        progress_callback=None,
+    ) -> bool:
+        """
+        Download a specific backup by ID for a given site.
+
+        Args:
+            site_id: ID of the site.
+            backup_id: Remote backup identifier to download.
+            progress_callback: Optional callable forwarded to BackupManager.
+
+        Returns:
+            True on success, False on failure.
+        """
+        try:
+            site = self.config.get_site(site_id)
+            if site is None:
+                self.logger.error(f'fetch_backup_by_id: site "{site_id}" not found.')
+                return False
+            manager = BackupManager(site)
+            return manager.fetch_backup(backup_id, progress_callback)
+        except Exception as exc:
+            self.logger.error(
+                f'fetch_backup_by_id failed for site {site_id}, backup {backup_id}: {exc}'
+            )
             return False
-
-        save_path = Path(site.get('save_path', '.')) / backup_id
-        save_path.mkdir(parents=True, exist_ok=True)
-
-        global_cfg = self._config.get_global()
-        max_concurrent = int(global_cfg.get('max_concurrent_downloads', 2))
-
-        chunks = manifest.get('chunks', [])
-        semaphore = threading.Semaphore(max_concurrent)
-        results = {}
-
-        def download_chunk(chunk_info: Dict[str, Any]):
-            filename = chunk_info['filename']
-            expected_md5 = chunk_info.get('md5', '')
-            expected_size = chunk_info.get('size', 0)
-            dest = save_path / filename
-
-            with semaphore:
-                progress = DownloadProgress(filename, expected_size)
-                with self._lock:
-                    self._active_downloads[filename] = progress
-
-                try:
-                    # Resume support
-                    resume_pos = dest.stat().st_size if dest.exists() else 0
-                    range_hdr = f'bytes={resume_pos}-' if resume_pos > 0 else None
-
-                    resp = self._api_get(site,
-                                         f'/backups/{backup_id}/chunks/{filename}',
-                                         stream=True, range_header=range_hdr)
-                    mode = 'ab' if resume_pos > 0 else 'wb'
-                    progress.downloaded = resume_pos
-
-                    with open(dest, mode) as f:
-                        for data in resp.iter_content(chunk_size=self.CHUNK_SIZE):
-                            f.write(data)
-                            progress.downloaded += len(data)
-                            if progress_callback:
-                                progress_callback(filename, progress.percent)
-
-                    # Verify checksum
-                    md5 = self._md5_file(dest)
-                    if expected_md5 and md5 != expected_md5:
-                        raise ValueError(f'MD5 mismatch for {filename}')
-
-                    progress.complete = True
-                    results[filename] = True
-                    logger.info(f'Downloaded {filename} ({progress.downloaded} bytes)')
-
-                except Exception as e:
-                    progress.error = str(e)
-                    results[filename] = False
-                    logger.error(f'Failed to download {filename}: {e}')
-                finally:
-                    with self._lock:
-                        self._active_downloads.pop(filename, None)
-
-        threads = [threading.Thread(target=download_chunk, args=(c,), daemon=True)
-                   for c in chunks]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        return all(results.values())
-
-    @staticmethod
-    def _md5_file(path: Path) -> str:
-        h = hashlib.md5()
-        with open(path, 'rb') as f:
-            for block in iter(lambda: f.read(65536), b''):
-                h.update(block)
-        return h.hexdigest()
-
-    # ------------------------------------------------------------------
-    # Retention
-    # ------------------------------------------------------------------
-
-    def apply_retention(self, site: Dict[str, Any]) -> None:
-        retention = int(site.get('retention_count', 5))
-        save_path = Path(site.get('save_path', '.'))
-        if not save_path.exists():
-            return
-        dirs = sorted(
-            [d for d in save_path.iterdir() if d.is_dir()],
-            key=lambda d: d.name
-        )
-        to_remove = dirs[:max(0, len(dirs) - retention)]
-        for d in to_remove:
-            import shutil
-            shutil.rmtree(d, ignore_errors=True)
-            logger.info(f'Retention: removed {d}')

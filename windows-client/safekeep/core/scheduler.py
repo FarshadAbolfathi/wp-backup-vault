@@ -1,84 +1,111 @@
 """
-SafeKeep — Background scheduler: periodically checks each site for new backups.
-
-Author: Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
+SafeKeep background scheduler — periodically checks for new backups.
+Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
 """
-
 import threading
+import logging
 import time
-from typing import Callable, Optional
+import datetime
 
-from safekeep.utils.logger import get_logger
-
-logger = get_logger("scheduler")
-
-
-class SitePoller(threading.Thread):
-    """Background thread that polls one site on a configurable interval."""
-
-    def __init__(
-        self,
-        site: dict,
-        fetch_callback: Callable[[str], None],
-        interval_minutes: int = 60,
-    ):
-        super().__init__(daemon=True)
-        self.site = site
-        self.fetch_callback = fetch_callback
-        self.interval = interval_minutes * 60
-        self._stop_event = threading.Event()
-        self.name = f"poller-{site['id']}"
-
-    def run(self):
-        logger.info(f"Poller started for site '{self.site.get('name')}' (interval={self.interval}s)")
-        # Wait a few seconds before first check so the GUI can finish loading
-        self._stop_event.wait(5)
-        while not self._stop_event.is_set():
-            try:
-                logger.info(f"Checking site: {self.site.get('name')}")
-                self.fetch_callback(self.site["id"])
-            except Exception as e:
-                logger.error(f"Poller error for site {self.site.get('name')}: {e}")
-            self._stop_event.wait(self.interval)
-
-    def stop(self):
-        self._stop_event.set()
+from safekeep.utils.logger import setup_logger
 
 
 class BackupScheduler:
-    """Manages one SitePoller thread per site."""
+    """
+    Background thread that wakes periodically to download pending backups.
 
-    def __init__(self, fetch_callback: Callable[[str], None]):
-        self._fetch_callback = fetch_callback
-        self._pollers: dict[str, SitePoller] = {}
-        self._lock = threading.Lock()
+    The scheduler is designed as a daemon thread so it does not prevent
+    the application from exiting. Use start()/stop() to control its lifecycle.
+    """
 
-    def start_site(self, site: dict):
-        site_id = site["id"]
-        interval = int(site.get("check_interval_minutes", 60))
-        with self._lock:
-            if site_id in self._pollers:
-                self._pollers[site_id].stop()
-            poller = SitePoller(site, self._fetch_callback, interval)
-            poller.start()
-            self._pollers[site_id] = poller
+    def __init__(self, site_manager, check_interval_minutes: int = 60) -> None:
+        self.site_manager = site_manager
+        self.check_interval = check_interval_minutes * 60  # convert to seconds
+        self.logger = setup_logger('safekeep.scheduler')
+        self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._running = False
 
-    def stop_site(self, site_id: str):
-        with self._lock:
-            poller = self._pollers.pop(site_id, None)
-            if poller:
-                poller.stop()
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
 
-    def restart_site(self, site: dict):
-        self.stop_site(site["id"])
-        self.start_site(site)
+    def start(self) -> None:
+        """Start the background scheduler thread."""
+        if self._running:
+            self.logger.debug('Scheduler already running; ignoring start().')
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run_loop,
+            daemon=True,
+            name='SafeKeep-Scheduler',
+        )
+        self._thread.start()
+        self._running = True
+        self.logger.info(
+            f'Scheduler started; checking every {self.check_interval // 60} minute(s).'
+        )
 
-    def start_all(self, sites: list):
+    def stop(self) -> None:
+        """Signal the scheduler to stop and wait up to 5 seconds for it to exit."""
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+        self._running = False
+        self.logger.info('Scheduler stopped.')
+
+    def is_running(self) -> bool:
+        """Return True if the scheduler thread is active."""
+        return self._running
+
+    # ------------------------------------------------------------------
+    # Background loop
+    # ------------------------------------------------------------------
+
+    def _run_loop(self) -> None:
+        """Main loop executed in the scheduler thread."""
+        while not self._stop_event.is_set():
+            try:
+                self._check_all_sites()
+            except Exception as exc:
+                self.logger.error(f'Scheduler error during site check: {exc}')
+            # Wait for the configured interval or until stop() is called
+            self._stop_event.wait(timeout=self.check_interval)
+
+    def _check_all_sites(self) -> None:
+        """Iterate over all configured sites and fetch pending backups."""
+        sites = self.site_manager.get_all_sites()
+        self.logger.debug(
+            f'Scheduled check at {datetime.datetime.now().isoformat()} '
+            f'for {len(sites)} site(s).'
+        )
         for site in sites:
-            self.start_site(site)
+            try:
+                fetched = self.site_manager.fetch_pending(site['id'])
+                if fetched:
+                    self.logger.info(
+                        f'Fetched {fetched} new backup(s) for site "{site["name"]}".'
+                    )
+            except Exception as exc:
+                self.logger.error(
+                    f'Failed to check site "{site.get("name", site.get("id"))}": {exc}'
+                )
 
-    def stop_all(self):
-        with self._lock:
-            for poller in self._pollers.values():
-                poller.stop()
-            self._pollers.clear()
+    # ------------------------------------------------------------------
+    # On-demand trigger
+    # ------------------------------------------------------------------
+
+    def trigger_now(self) -> None:
+        """
+        Run _check_all_sites immediately in a new daemon thread.
+
+        This does not block the calling thread (GUI-safe).
+        """
+        trigger_thread = threading.Thread(
+            target=self._check_all_sites,
+            daemon=True,
+            name='SafeKeep-ManualTrigger',
+        )
+        trigger_thread.start()
+        self.logger.info('Manual backup check triggered.')

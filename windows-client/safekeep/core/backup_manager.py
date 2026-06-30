@@ -1,192 +1,234 @@
 """
-SafeKeep — Backup manager: list, download, assemble, and manage backups.
-
-Author: Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
+SafeKeep backup lifecycle manager — fetch, verify, and retain backups.
+Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
 """
-
 import os
-import shutil
+import logging
+import json
+import datetime
 from pathlib import Path
-from typing import Callable, Optional
 
-import requests
-
-from safekeep.core.downloader import download_chunk
-from safekeep.utils.helpers import verify_chunk, get_dir_size, safe_remove_dir, human_size
-from safekeep.utils.logger import get_logger
-
-logger = get_logger("backup_manager")
-
-HTTP_TIMEOUT = (15, 60)
+from safekeep.core.downloader import ChunkDownloader
+from safekeep.utils.helpers import ensure_dir, safe_delete, human_readable_size
+from safekeep.utils.logger import setup_logger
 
 
-def _api_get(site_url: str, api_key: str, path: str) -> dict | list:
-    url = site_url.rstrip("/") + "/wp-json/wp-vault-bridge/v1" + path
-    resp = requests.get(url, headers={"X-API-Key": api_key}, timeout=HTTP_TIMEOUT, verify=True)
-    resp.raise_for_status()
-    return resp.json()
-
-
-def list_remote_backups(site_url: str, api_key: str) -> list:
-    """Return list of backup objects from the remote WordPress site."""
-    try:
-        return _api_get(site_url, api_key, "/backups")
-    except Exception as e:
-        logger.error(f"list_remote_backups failed: {e}")
-        raise
-
-
-def get_manifest(site_url: str, api_key: str, backup_id: str) -> dict:
-    try:
-        return _api_get(site_url, api_key, f"/backups/{backup_id}/manifest")
-    except Exception as e:
-        logger.error(f"get_manifest failed for {backup_id}: {e}")
-        raise
-
-
-def test_connection(site_url: str, api_key: str) -> tuple[bool, str]:
-    """Test connectivity and API key validity. Returns (ok, message)."""
-    try:
-        result = _api_get(site_url, api_key, "/backups")
-        return True, f"اتصال موفق — {len(result)} بک‌آپ موجود"
-    except requests.exceptions.HTTPError as e:
-        if e.response is not None and e.response.status_code == 401:
-            return False, "کلید API نادرست است (۴۰۱ Unauthorized)"
-        return False, f"خطای HTTP: {e}"
-    except requests.exceptions.ConnectionError:
-        return False, "اتصال برقرار نشد — آدرس سایت را بررسی کنید"
-    except Exception as e:
-        return False, f"خطا: {e}"
-
-
-def download_backup(
-    site_url: str,
-    api_key: str,
-    backup_id: str,
-    save_path: str | Path,
-    progress_callback: Optional[Callable[[str, int, int], None]] = None,
-) -> bool:
+class BackupManager:
     """
-    Download all chunks for a backup, verify checksums, and assemble into final archive.
+    Manages the full backup lifecycle for a single WordPress site.
 
-    Args:
-        progress_callback: Called with (chunk_filename, bytes_done, total_bytes)
-
-    Returns:
-        True if backup downloaded and assembled successfully.
+    Responsibilities:
+    - Query remote backups
+    - Identify which backups have not yet been downloaded
+    - Fetch missing backups chunk by chunk
+    - Enforce local retention policy
     """
-    save_path = Path(save_path)
-    backup_dir = save_path / backup_id
-    backup_dir.mkdir(parents=True, exist_ok=True)
 
-    # Check if already downloaded
-    done_marker = backup_dir / ".complete"
-    if done_marker.exists():
-        logger.info(f"Backup {backup_id} already complete, skipping.")
-        return True
+    def __init__(self, site: dict) -> None:
+        self.site = site
+        self.logger = setup_logger('safekeep.backup_manager')
+        self.downloader = ChunkDownloader(site['url'], site['api_key'])
+        self.save_dir = Path(site['save_path'])
 
-    try:
-        manifest = get_manifest(site_url, api_key, backup_id)
-    except Exception as e:
-        logger.error(f"Cannot get manifest for {backup_id}: {e}")
-        return False
+    # ------------------------------------------------------------------
+    # Remote
+    # ------------------------------------------------------------------
 
-    chunks = manifest.get("chunks", [])
-    if not chunks:
-        logger.error(f"Manifest has no chunks for {backup_id}")
-        return False
+    def get_remote_backups(self) -> list:
+        """
+        Return remote backups with status 'complete', sorted newest first.
 
-    logger.info(f"Downloading backup {backup_id}: {len(chunks)} chunk(s)")
+        Returns:
+            List of backup dicts.
+        """
+        try:
+            all_backups = self.downloader.list_backups()
+            complete = [b for b in all_backups if b.get('status') == 'complete']
+            complete.sort(key=lambda b: b.get('date', ''), reverse=True)
+            return complete
+        except Exception as exc:
+            self.logger.error(f'get_remote_backups failed: {exc}')
+            return []
 
-    for chunk_info in chunks:
-        filename = chunk_info["filename"]
-        chunk_path = backup_dir / filename
-        chunk_url = (
-            site_url.rstrip("/")
-            + f"/wp-json/wp-vault-bridge/v1/backups/{backup_id}/chunks/{filename}"
-        )
+    # ------------------------------------------------------------------
+    # Local
+    # ------------------------------------------------------------------
 
-        if chunk_path.exists():
-            ok, err = verify_chunk(
-                chunk_path,
-                chunk_info.get("md5", ""),
-                chunk_info.get("sha256", ""),
+    def get_local_backups(self) -> list:
+        """
+        Scan the local save directory for downloaded backups.
+
+        A valid local backup is a subdirectory containing a manifest.json file.
+
+        Returns:
+            List of manifest dicts, sorted newest first.
+        """
+        backups = []
+        try:
+            if not self.save_dir.exists():
+                return backups
+            for entry in self.save_dir.iterdir():
+                if not entry.is_dir():
+                    continue
+                manifest_path = entry / 'manifest.json'
+                if not manifest_path.exists():
+                    continue
+                try:
+                    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+                    backups.append(manifest)
+                except Exception as exc:
+                    self.logger.warning(f'Could not read manifest {manifest_path}: {exc}')
+            backups.sort(key=lambda b: b.get('date', ''), reverse=True)
+        except Exception as exc:
+            self.logger.error(f'get_local_backups failed: {exc}')
+        return backups
+
+    # ------------------------------------------------------------------
+    # Pending
+    # ------------------------------------------------------------------
+
+    def get_pending_backups(self) -> list:
+        """
+        Return remote backups that have not yet been downloaded locally.
+
+        Returns:
+            List of remote backup dicts whose IDs are absent locally.
+        """
+        try:
+            remote = self.get_remote_backups()
+            local_ids = {
+                b.get('backup_id') or b.get('id')
+                for b in self.get_local_backups()
+            }
+            return [b for b in remote if (b.get('backup_id') or b.get('id')) not in local_ids]
+        except Exception as exc:
+            self.logger.error(f'get_pending_backups failed: {exc}')
+            return []
+
+    # ------------------------------------------------------------------
+    # Fetch
+    # ------------------------------------------------------------------
+
+    def fetch_backup(self, backup_id: str, progress_callback=None) -> bool:
+        """
+        Download a specific backup and write its manifest to the local directory.
+
+        Args:
+            backup_id: Remote backup identifier.
+            progress_callback: Optional callable(bytes_downloaded, total_bytes).
+
+        Returns:
+            True on success, False on any failure.
+        """
+        dest = self.save_dir / backup_id
+        try:
+            ensure_dir(str(dest))
+            manifest = self.downloader.get_manifest(backup_id)
+            chunks = manifest.get('chunks', [])
+
+            for chunk in chunks:
+                chunk_filename = chunk.get('filename')
+                chunk_path = dest / chunk_filename
+
+                ok = self.downloader.download_chunk(
+                    backup_id, chunk_filename, str(chunk_path), progress_callback
+                )
+                if not ok:
+                    self.logger.error(
+                        f'Chunk download failed: {chunk_filename} for backup {backup_id}.'
+                    )
+                    return False
+
+                # Verify checksum
+                if 'sha256' in chunk:
+                    from safekeep.utils.helpers import verify_sha256
+                    if not verify_sha256(str(chunk_path), chunk['sha256']):
+                        self.logger.error(
+                            f'Checksum mismatch for {chunk_filename}; aborting backup {backup_id}.'
+                        )
+                        return False
+                elif 'md5' in chunk:
+                    from safekeep.utils.helpers import verify_md5
+                    if not verify_md5(str(chunk_path), chunk['md5']):
+                        self.logger.error(
+                            f'MD5 mismatch for {chunk_filename}; aborting backup {backup_id}.'
+                        )
+                        return False
+
+            # Persist manifest for local tracking
+            manifest_path = dest / 'manifest.json'
+            manifest_path.write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8'
             )
-            if ok:
-                logger.info(f"Chunk already verified: {filename}")
-                continue
-            else:
-                logger.warning(f"Chunk verification failed, re-downloading: {filename} — {err}")
-                chunk_path.unlink(missing_ok=True)
 
-        def _progress(done: int, total: int, _fname=filename):
-            if progress_callback:
-                progress_callback(_fname, done, total)
+            self.logger.info(
+                f'Backup {backup_id} fetched successfully to {dest}.'
+            )
+            return True
 
-        ok = download_chunk(
-            url=chunk_url,
-            api_key=api_key,
-            save_path=chunk_path,
-            expected_md5=chunk_info.get("md5"),
-            expected_sha256=chunk_info.get("sha256"),
-            progress_callback=_progress,
-        )
-
-        if not ok:
-            logger.error(f"Failed to download chunk {filename}")
+        except Exception as exc:
+            self.logger.error(f'fetch_backup failed for {backup_id}: {exc}')
             return False
 
-    # Write manifest locally
-    import json
-    with open(backup_dir / "manifest.json", "w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False, indent=2)
+    # ------------------------------------------------------------------
+    # Retention
+    # ------------------------------------------------------------------
 
-    # Mark as complete
-    done_marker.touch()
-    logger.info(f"Backup {backup_id} downloaded successfully.")
-    return True
+    def apply_local_retention(self) -> None:
+        """
+        Delete oldest local backups that exceed the configured retention count.
+        """
+        try:
+            retention_count = int(self.site.get('retention_count', 5))
+            local = self.get_local_backups()  # sorted newest first
+            to_delete = local[retention_count:]
+            for backup in to_delete:
+                backup_id = backup.get('backup_id') or backup.get('id')
+                if backup_id:
+                    target = self.save_dir / backup_id
+                    safe_delete(str(target))
+                    self.logger.info(f'Retention: deleted old backup {backup_id}.')
+            if to_delete:
+                self.logger.info(
+                    f'Retention policy applied: deleted {len(to_delete)} backup(s).'
+                )
+        except Exception as exc:
+            self.logger.error(f'apply_local_retention failed: {exc}')
 
+    # ------------------------------------------------------------------
+    # Status
+    # ------------------------------------------------------------------
 
-def list_local_backups(save_path: str | Path) -> list:
-    """List complete local backups in save_path, newest first."""
-    save_path = Path(save_path)
-    if not save_path.exists():
-        return []
+    def get_status_summary(self) -> dict:
+        """
+        Return a summary of backup status for the site.
 
-    result = []
-    for entry in save_path.iterdir():
-        if not entry.is_dir():
-            continue
-        done_marker = entry / ".complete"
-        manifest_file = entry / "manifest.json"
-        if not done_marker.exists():
-            continue
-
-        info = {
-            "id": entry.name,
-            "path": str(entry),
-            "size": get_dir_size(entry),
-        }
-        if manifest_file.exists():
-            import json
-            try:
-                info["manifest"] = json.loads(manifest_file.read_text("utf-8"))
-                info["created_at"] = info["manifest"].get("created_at", "")
-            except Exception:
-                info["created_at"] = ""
-        result.append(info)
-
-    result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    return result
-
-
-def cleanup_old_backups(save_path: str | Path, retention_count: int):
-    """Delete local backups older than the retention limit."""
-    backups = list_local_backups(save_path)
-    if len(backups) <= retention_count:
-        return
-
-    to_delete = backups[retention_count:]
-    for b in to_delete:
-        safe_remove_dir(b["path"])
-        logger.info(f"Deleted old local backup: {b['id']} ({human_size(b['size'])})")
+        Returns:
+            Dict with site_id, site_name, remote_count, local_count,
+            pending_count, latest_local_date, save_dir.
+        """
+        try:
+            remote = self.get_remote_backups()
+            local = self.get_local_backups()
+            pending = self.get_pending_backups()
+            latest_date = local[0].get('date', '') if local else ''
+            return {
+                'site_id': self.site.get('id', ''),
+                'site_name': self.site.get('name', ''),
+                'remote_count': len(remote),
+                'local_count': len(local),
+                'pending_count': len(pending),
+                'latest_local_date': latest_date,
+                'save_dir': str(self.save_dir),
+            }
+        except Exception as exc:
+            self.logger.error(f'get_status_summary failed: {exc}')
+            return {
+                'site_id': self.site.get('id', ''),
+                'site_name': self.site.get('name', ''),
+                'remote_count': 0,
+                'local_count': 0,
+                'pending_count': 0,
+                'latest_local_date': '',
+                'save_dir': str(self.save_dir),
+            }

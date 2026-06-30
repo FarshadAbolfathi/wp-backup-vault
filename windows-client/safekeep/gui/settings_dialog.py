@@ -1,64 +1,83 @@
 """
-SafeKeep — Global settings dialog (Persian / RTL)
-
-Author: Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
+SafeKeep settings dialog — global application preferences.
+Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
 """
+import logging
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QSpinBox, QVBoxLayout,
+    QDialog, QFormLayout, QComboBox, QSpinBox,
+    QDialogButtonBox, QVBoxLayout,
 )
+from PySide6.QtCore import Qt
 
-from safekeep.core import config as cfg
+from safekeep.utils.logger import setup_logger
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent=None):
+    """Dialog for editing global application settings."""
+
+    def __init__(self, parent=None, config=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("تنظیمات کلی")
-        self.setMinimumWidth(360)
-        self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-        self._build_ui()
-        self._load()
+        self.config = config
+        self.logger = setup_logger('safekeep.gui.settings_dialog')
+        self.setWindowTitle('تنظیمات برنامه')
+        self.setMinimumWidth(350)
+        self.setLayoutDirection(Qt.RightToLeft)
+        self._setup_ui()
+        if config:
+            self._load_settings()
 
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-
+    def _setup_ui(self) -> None:
+        """Build the settings form."""
+        main_layout = QVBoxLayout(self)
         form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form.setSpacing(10)
+        form.setLabelAlignment(Qt.AlignRight)
 
-        self.log_level_combo = QComboBox()
-        self.log_level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
-        form.addRow("سطح لاگ:", self.log_level_combo)
+        # Log level
+        self.combo_log_level = QComboBox()
+        self.combo_log_level.addItems(['DEBUG', 'INFO', 'WARNING', 'ERROR'])
+        self.combo_log_level.setCurrentText('INFO')
+        form.addRow('سطح لاگ:', self.combo_log_level)
 
-        self.max_downloads_spin = QSpinBox()
-        self.max_downloads_spin.setRange(1, 10)
-        self.max_downloads_spin.setValue(2)
-        self.max_downloads_spin.setSuffix(" دانلود همزمان")
-        form.addRow("حداکثر دانلود:", self.max_downloads_spin)
+        # Concurrent downloads
+        self.spin_concurrent = QSpinBox()
+        self.spin_concurrent.setMinimum(1)
+        self.spin_concurrent.setMaximum(10)
+        self.spin_concurrent.setValue(2)
+        form.addRow('حداکثر دانلود همزمان:', self.spin_concurrent)
 
-        layout.addLayout(form)
+        main_layout.addLayout(form)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("ذخیره")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("انصراف")
-        buttons.accepted.connect(self._save)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText('تأیید')
+        buttons.button(QDialogButtonBox.Cancel).setText('انصراف')
+        buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        main_layout.addWidget(buttons)
 
-    def _load(self):
-        settings = cfg.get_global_settings()
-        log_level = settings.get("log_level", "INFO")
-        idx = self.log_level_combo.findText(log_level)
-        if idx >= 0:
-            self.log_level_combo.setCurrentIndex(idx)
-        self.max_downloads_spin.setValue(int(settings.get("max_concurrent_downloads", 2)))
+    def _load_settings(self) -> None:
+        """Populate dialog fields from the current configuration."""
+        try:
+            settings = self.config.get_global_settings()
+            log_level = settings.get('log_level', 'INFO').upper()
+            idx = self.combo_log_level.findText(log_level)
+            if idx >= 0:
+                self.combo_log_level.setCurrentIndex(idx)
+            self.spin_concurrent.setValue(
+                int(settings.get('max_concurrent_downloads', 2))
+            )
+        except Exception as exc:
+            self.logger.error(f'_load_settings failed: {exc}')
 
-    def _save(self):
-        cfg.save_global_settings({
-            "log_level": self.log_level_combo.currentText(),
-            "max_concurrent_downloads": self.max_downloads_spin.value(),
-        })
-        self.accept()
+    def get_settings(self) -> dict:
+        """
+        Return the current settings as a dict.
+
+        Returns:
+            Dict with log_level and max_concurrent_downloads.
+        """
+        return {
+            'log_level': self.combo_log_level.currentText(),
+            'max_concurrent_downloads': self.spin_concurrent.value(),
+        }
