@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from safekeep.core.backup_manager import test_connection
+from safekeep.core.downloader import ChunkDownloader
+import requests
 
 
 class _TestWorker(QThread):
@@ -23,8 +24,19 @@ class _TestWorker(QThread):
         self._key = key
 
     def run(self):
-        ok, msg = test_connection(self._url, self._key)
-        self.result.emit(ok, msg)
+        try:
+            d = ChunkDownloader(self._url, self._key)
+            d.list_backups()
+            self.result.emit(True, 'اتصال موفق بود')
+        except requests.exceptions.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 401:
+                self.result.emit(False, 'کلید API نادرست است')
+            else:
+                self.result.emit(False, f'خطای HTTP: {exc}')
+        except requests.exceptions.ConnectionError:
+            self.result.emit(False, 'اتصال برقرار نشد')
+        except Exception as exc:
+            self.result.emit(False, str(exc))
 
 
 class SiteDialog(QDialog):
