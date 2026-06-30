@@ -1,13 +1,13 @@
 <?php
 /**
- * Plugin Name: WP Vault Bridge
+ * Plugin Name: WP Vault
  * Plugin URI: https://github.com/farshadabolfathi/wp-backup-vault
  * Description: Secure WordPress backup plugin with pull-based API for SafeKeep Windows client.
  * Version: 1.0.0
  * Author: Farshad Abolfathi
  * Author URI: https://www.linkedin.com/in/farshad-abolfathi/
  * License: MIT
- * Text Domain: wp-vault-bridge
+ * Text Domain: wp-vault
  *
  * Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
  */
@@ -51,10 +51,10 @@ function wvb_deactivate() {
 
 add_action( 'admin_menu', function() {
     add_menu_page(
-        'WP Vault Bridge',
-        'WP Vault Bridge',
+        'WP Vault',
+        'WP Vault',
         'manage_options',
-        'wp-vault-bridge',
+        'wp-vault',
         'wvb_render_admin_page',
         'dashicons-vault',
         80

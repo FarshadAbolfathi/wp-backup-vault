@@ -1,4 +1,4 @@
-/* WP Vault Bridge — Admin JS
+/* WP Vault — Admin JS
  * Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
  */
 (function ($) {

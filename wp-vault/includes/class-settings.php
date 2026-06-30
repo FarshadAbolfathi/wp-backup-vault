@@ -1,5 +1,5 @@
 <?php
-/** WP Vault Bridge — Settings Manager
+/** WP Vault — Settings Manager
  * Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
  */
 
@@ -62,7 +62,7 @@ class WVB_Settings {
             $lines = array_slice($lines, -200);
         }
         update_option('wvb_backup_log', implode("\n", $lines));
-        file_put_contents(WVB_PLUGIN_DIR . 'wp-vault-bridge.log', $entry, FILE_APPEND | LOCK_EX);
+        file_put_contents(WVB_PLUGIN_DIR . 'wp-vault.log', $entry, FILE_APPEND | LOCK_EX);
     }
 
     public function get_log(int $lines = 50) {

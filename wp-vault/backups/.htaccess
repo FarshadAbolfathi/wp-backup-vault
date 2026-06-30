@@ -1,0 +1,10 @@
+# WP Vault — Block direct web access to backup files
+# All backup downloads go through the authenticated REST API only.
+
+Order deny,allow
+Deny from all
+
+# Nginx users: add this to your server block:
+# location ~* /wp-content/plugins/wp-vault/backups/ {
+#     deny all;
+# }

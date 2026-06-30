@@ -1,12 +1,12 @@
 <?php
 /**
- * Admin Assets — WP Vault Bridge
+ * Admin Assets — WP Vault
  * Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 function wvb_enqueue_admin_assets( $hook ) {
-    if ( 'toplevel_page_wp-vault-bridge' !== $hook ) {
+    if ( 'toplevel_page_wp-vault' !== $hook ) {
         return;
     }
     wp_enqueue_style(
@@ -25,7 +25,7 @@ function wvb_enqueue_admin_assets( $hook ) {
     wp_localize_script( 'wvb-admin-js', 'wvbData', array(
         'ajax_url'        => admin_url( 'admin-ajax.php' ),
         'nonce'           => wp_create_nonce( 'wvb_nonce' ),
-        'rest_url'        => rest_url( 'wp-vault-bridge/v1/' ),
+        'rest_url'        => rest_url( 'wp-vault/v1/' ),
         'rest_nonce'      => wp_create_nonce( 'wp_rest' ),
         'strings'         => array(
             'backup_started'   => 'بک‌آپ شروع شد...',

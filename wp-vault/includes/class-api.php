@@ -1,5 +1,5 @@
 <?php
-/** WP Vault Bridge — REST API
+/** WP Vault — REST API
  * Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
  */
 
@@ -8,31 +8,31 @@ if (!defined('ABSPATH')) exit;
 class WVB_API {
 
     public function register_routes() {
-        register_rest_route('wp-vault-bridge/v1', '/backups', [
+        register_rest_route('wp-vault/v1', '/backups', [
             'methods'             => 'GET',
             'callback'            => [$this, 'get_backups'],
             'permission_callback' => [$this, 'authenticate'],
         ]);
 
-        register_rest_route('wp-vault-bridge/v1', '/backups/(?P<id>[a-zA-Z0-9_]+)/manifest', [
+        register_rest_route('wp-vault/v1', '/backups/(?P<id>[a-zA-Z0-9_]+)/manifest', [
             'methods'             => 'GET',
             'callback'            => [$this, 'get_manifest'],
             'permission_callback' => [$this, 'authenticate'],
         ]);
 
-        register_rest_route('wp-vault-bridge/v1', '/backups/(?P<id>[a-zA-Z0-9_]+)/chunks/(?P<filename>[a-zA-Z0-9_.%+-]+)', [
+        register_rest_route('wp-vault/v1', '/backups/(?P<id>[a-zA-Z0-9_]+)/chunks/(?P<filename>[a-zA-Z0-9_.%+-]+)', [
             'methods'             => 'GET',
             'callback'            => [$this, 'get_chunk'],
             'permission_callback' => [$this, 'authenticate'],
         ]);
 
-        register_rest_route('wp-vault-bridge/v1', '/backups/(?P<id>[a-zA-Z0-9_]+)', [
+        register_rest_route('wp-vault/v1', '/backups/(?P<id>[a-zA-Z0-9_]+)', [
             'methods'             => 'DELETE',
             'callback'            => [$this, 'delete_backup_route'],
             'permission_callback' => [$this, 'authenticate'],
         ]);
 
-        register_rest_route('wp-vault-bridge/v1', '/generate-key', [
+        register_rest_route('wp-vault/v1', '/generate-key', [
             'methods'             => 'POST',
             'callback'            => [$this, 'generate_key'],
             'permission_callback' => '__return_true',

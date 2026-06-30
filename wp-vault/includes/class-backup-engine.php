@@ -1,5 +1,5 @@
 <?php
-/** WP Vault Bridge — Backup Engine
+/** WP Vault — Backup Engine
  * Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
  */
 
@@ -109,7 +109,7 @@ class WVB_Backup_Engine {
         if (!$success) {
             $fp = fopen($sql_file, 'w');
             if ($fp) {
-                fwrite($fp, "-- WP Vault Bridge DB Export\n");
+                fwrite($fp, "-- WP Vault DB Export\n");
                 fwrite($fp, "-- Generated: " . date('Y-m-d H:i:s') . "\n\n");
                 fwrite($fp, "SET FOREIGN_KEY_CHECKS=0;\n\n");
 

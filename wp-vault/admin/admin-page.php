@@ -1,6 +1,6 @@
 <?php
 /**
- * WP Vault Bridge — Admin Page
+ * WP Vault — Admin Page
  * Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
@@ -27,7 +27,7 @@ $masked_key = ( strlen( $api_key ) >= 4 )
 <div class="wvb-wrap" dir="rtl" lang="fa">
 
     <div class="wvb-header">
-        <h1>WP Vault Bridge</h1>
+        <h1>WP Vault</h1>
     </div>
 
     <div class="wvb-tabs" id="wvb-tabs">

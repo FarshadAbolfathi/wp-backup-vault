@@ -1,5 +1,5 @@
 <?php
-/** WP Vault Bridge — Retention Manager
+/** WP Vault — Retention Manager
  * Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
  */
 

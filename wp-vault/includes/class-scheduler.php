@@ -1,5 +1,5 @@
 <?php
-/** WP Vault Bridge — Scheduler
+/** WP Vault — Scheduler
  * Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
  */
 

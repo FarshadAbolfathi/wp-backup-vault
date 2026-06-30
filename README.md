@@ -1,6 +1,6 @@
 # WP Backup Vault
 
-A complete, production-ready WordPress backup solution with a **pull-based architecture**. The WordPress plugin (WP Vault Bridge) creates encrypted, chunked backups on the server, and the Windows desktop client (SafeKeep) periodically connects and downloads them — no inbound connection to your Windows machine required.
+A complete, production-ready WordPress backup solution with a **pull-based architecture**. The WordPress plugin (WP Vault) creates encrypted, chunked backups on the server, and the Windows desktop client (SafeKeep) periodically connects and downloads them — no inbound connection to your Windows machine required.
 
 ## Architecture
 
@@ -9,7 +9,7 @@ A complete, production-ready WordPress backup solution with a **pull-based archi
 │         WordPress Server            │        │      Windows Server (Local)       │
 │                                     │        │                                   │
 │  ┌──────────────────────────────┐   │  PULL  │  ┌────────────────────────────┐  │
-│  │     WP Vault Bridge Plugin   │◄──┼────────┼──│       SafeKeep Client      │  │
+│  │     WP Vault Plugin   │◄──┼────────┼──│       SafeKeep Client      │  │
 │  │                              │   │        │  │                            │  │
 │  │  • Creates chunked ZIPs      │   │        │  │  • Polls for new backups   │  │
 │  │  • Exports database (SQL)    │   │        │  │  • Downloads chunks        │  │
@@ -29,7 +29,7 @@ A complete, production-ready WordPress backup solution with a **pull-based archi
 
 ## Features
 
-### WP Vault Bridge (WordPress Plugin)
+### WP Vault (WordPress Plugin)
 - **Full backup**: all `wp-content` files (uploads, themes, plugins) + complete database export
 - **Chunked ZIPs**: configurable chunk size (default 50 MB) — survives shared hosting timeouts
 - **Step-based processing**: background batch execution avoids `max_execution_time` limits
@@ -55,7 +55,7 @@ A complete, production-ready WordPress backup solution with a **pull-based archi
 
 ---
 
-## Installation — WP Vault Bridge (WordPress Plugin)
+## Installation — WP Vault (WordPress Plugin)
 
 ### Requirements
 - WordPress 5.8 or newer
@@ -64,24 +64,24 @@ A complete, production-ready WordPress backup solution with a **pull-based archi
 
 ### Steps
 
-1. **Download** the `wp-plugin/` folder from this repository.
+1. **Download** the `wp-vault/` folder from this repository.
 
-2. **Rename** the folder to `wp-vault-bridge` (if not already).
+2. **Rename** the folder to `wp-vault` (if not already).
 
 3. **Upload** to your WordPress server:
-   - Via FTP/SFTP: upload to `wp-content/plugins/wp-vault-bridge/`
+   - Via FTP/SFTP: upload to `wp-content/plugins/wp-vault/`
    - Via cPanel File Manager: zip the folder, upload to `wp-content/plugins/`, then extract
 
-4. **Activate** in WordPress Admin → Plugins → find "WP Vault Bridge" → Activate.
+4. **Activate** in WordPress Admin → Plugins → find "WP Vault" → Activate.
 
-5. **Configure** in WordPress Admin → WP Vault Bridge:
+5. **Configure** in WordPress Admin → WP Vault:
    - Set your desired chunk size (default: 50 MB)
    - Set retention count (default: 2 backups)
    - Add schedule times (e.g., `02:00`, `14:00`)
    - Copy your **API Key** — you will need it in SafeKeep
 
 6. **Verify** the backups folder is protected:
-   - Visit `https://yoursite.com/wp-content/plugins/wp-vault-bridge/backups/` — you should get a 403 Forbidden
+   - Visit `https://yoursite.com/wp-content/plugins/wp-vault/backups/` — you should get a 403 Forbidden
 
 ### WP Cron Note
 WP Cron requires site traffic to trigger. On low-traffic sites, set up a real cron job:
@@ -135,7 +135,7 @@ Run `dist/SafeKeep.exe` — no Python installation needed on the target machine.
 3. Fill in:
    - Site name (any label)
    - WordPress site URL (e.g., `https://yoursite.com`)
-   - API Key (from WP Vault Bridge settings)
+   - API Key (from WP Vault settings)
    - Save path (e.g., `D:\Backups\MySite`)
    - Retention count (how many backups to keep locally)
    - Check interval in minutes
@@ -148,7 +148,7 @@ Run `dist/SafeKeep.exe` — no Python installation needed on the target machine.
 
 ### Generating
 The plugin auto-generates an API Key on first activation. Find it in:
-**WordPress Admin → WP Vault Bridge → API Key** section.
+**WordPress Admin → WP Vault → API Key** section.
 
 ### Regenerating
 Click the **Regenerate** button in the API Key section. The old key is immediately invalidated. Update SafeKeep with the new key.
@@ -212,7 +212,7 @@ WP Cron only runs when someone visits the site. On low-traffic sites:
 ### Database export fails
 - Check if `mysqldump` is available on your host
 - The plugin falls back to PHP-based export automatically
-- If PHP export also fails, check `wp-vault-bridge.log` in the plugin directory
+- If PHP export also fails, check `wp-vault.log` in the plugin directory
 
 ### SafeKeep: download interrupted / stuck
 - SafeKeep automatically resumes interrupted downloads using HTTP Range headers
@@ -222,8 +222,8 @@ WP Cron only runs when someone visits the site. On low-traffic sites:
 ### SafeKeep: "Connection failed"
 - Verify the WordPress site URL includes `https://` (or `http://`)
 - Verify the API Key is copied exactly (no extra spaces)
-- Check that the WP Vault Bridge plugin is activated on the target site
-- Test by visiting: `https://yoursite.com/wp-json/wp-vault-bridge/v1/backups` in a browser (should return 401)
+- Check that the WP Vault plugin is activated on the target site
+- Test by visiting: `https://yoursite.com/wp-json/wp-vault/v1/backups` in a browser (should return 401)
 
 ### SafeKeep: checksums don't match
 - Delete the partial download folder for that backup

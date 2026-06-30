@@ -38,3 +38,19 @@ jobs:
           name: SafeKeep-Windows
           path: windows-client/dist/SafeKeep.exe
           retention-days: 30
+
+  package-plugin:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Zip WP Vault plugin
+        run: zip -r wp-vault.zip wp-vault/
+
+      - name: Upload WP Vault plugin as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WP-Vault-Plugin
+          path: wp-vault.zip
+          retention-days: 30
