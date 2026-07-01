@@ -81,7 +81,12 @@ class WVB_Settings {
             $this->set_retention_count((int)$_POST['retention_count']);
         }
         if (isset($_POST['schedule_times'])) {
-            $times = json_decode(stripslashes($_POST['schedule_times']), true);
+            $raw = $_POST['schedule_times'];
+            if (is_array($raw)) {
+                $times = array_map('sanitize_text_field', $raw);
+            } else {
+                $times = json_decode(stripslashes($raw), true) ?: [];
+            }
             if (is_array($times)) {
                 $this->set_schedule_times($times);
             }
