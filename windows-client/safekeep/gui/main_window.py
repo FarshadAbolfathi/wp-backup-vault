@@ -516,20 +516,40 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_test_connection(self) -> None:
-        """Test the API connection for the selected site."""
+        """Test the API connection for the selected site (runs in background thread)."""
         if not self._current_site_id:
             return
-        try:
-            self.btn_test.setEnabled(False)
-            ok, msg = self.site_manager.test_connection(self._current_site_id)
+        site_id = self._current_site_id
+        self.btn_test.setEnabled(False)
+        self.lbl_progress.setText('در حال بررسی اتصال...')
+
+        class _TestWorker(QThread):
+            done = Signal(bool, str)
+            def __init__(self, sm, sid):
+                super().__init__()
+                self._sm = sm
+                self._sid = sid
+            def run(self):
+                try:
+                    ok, msg = self._sm.test_connection(self._sid)
+                    self.done.emit(ok, msg)
+                except Exception as exc:
+                    self.done.emit(False, str(exc))
+
+        worker = _TestWorker(self.site_manager, site_id)
+
+        def on_done(ok, msg):
+            self.btn_test.setEnabled(True)
+            self.lbl_progress.setText('')
             if ok:
                 QMessageBox.information(self, 'بررسی اتصال', msg)
             else:
                 QMessageBox.warning(self, 'بررسی اتصال', msg)
-        except Exception as exc:
-            QMessageBox.critical(self, 'خطا', str(exc))
-        finally:
-            self.btn_test.setEnabled(True)
+
+        worker.done.connect(on_done)
+        worker.done.connect(lambda ok, msg, w=worker: None)  # keep ref alive
+        self._test_worker = worker  # prevent GC
+        worker.start()
 
     # ------------------------------------------------------------------
     # Site add / remove

@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import uuid
+
 from safekeep.core.downloader import ChunkDownloader
 import requests
 
@@ -174,6 +176,7 @@ class SiteDialog(QDialog):
 
     def get_site_data(self) -> dict:
         data = {
+            "id": self._site.get("id") or str(uuid.uuid4()),
             "name": self.name_edit.text().strip(),
             "url": self.url_edit.text().strip().rstrip("/"),
             "api_key": self.key_edit.text().strip(),
@@ -181,6 +184,4 @@ class SiteDialog(QDialog):
             "retention_count": self.retention_spin.value(),
             "check_interval_minutes": self.interval_spin.value(),
         }
-        if self._site.get("id"):
-            data["id"] = self._site["id"]
         return data
