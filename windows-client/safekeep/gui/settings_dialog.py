@@ -2,11 +2,12 @@
 SafeKeep settings dialog — global application preferences.
 Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
 """
+import sys
 import logging
 
 from PySide6.QtWidgets import (
-    QDialog, QFormLayout, QComboBox, QSpinBox,
-    QDialogButtonBox, QVBoxLayout,
+    QDialog, QFormLayout, QComboBox, QSpinBox, QCheckBox,
+    QDialogButtonBox, QVBoxLayout, QLabel,
 )
 from PySide6.QtCore import Qt
 
@@ -21,7 +22,7 @@ class SettingsDialog(QDialog):
         self.config = config
         self.logger = setup_logger('safekeep.gui.settings_dialog')
         self.setWindowTitle('تنظیمات برنامه')
-        self.setMinimumWidth(350)
+        self.setMinimumWidth(380)
         self.setLayoutDirection(Qt.RightToLeft)
         self._setup_ui()
         if config:
@@ -31,7 +32,7 @@ class SettingsDialog(QDialog):
         """Build the settings form."""
         main_layout = QVBoxLayout(self)
         form = QFormLayout()
-        form.setSpacing(10)
+        form.setSpacing(12)
         form.setLabelAlignment(Qt.AlignRight)
 
         # Log level
@@ -46,6 +47,23 @@ class SettingsDialog(QDialog):
         self.spin_concurrent.setMaximum(10)
         self.spin_concurrent.setValue(2)
         form.addRow('حداکثر دانلود همزمان:', self.spin_concurrent)
+
+        # Autorun toggle (Windows only)
+        self.chk_autorun = QCheckBox('اجرای خودکار هنگام روشن شدن ویندوز')
+        if sys.platform != 'win32':
+            self.chk_autorun.setEnabled(False)
+            self.chk_autorun.setToolTip('فقط در ویندوز پشتیبانی می‌شود')
+        else:
+            self.chk_autorun.setToolTip(
+                'SafeKeep را به استارتاپ ویندوز اضافه می‌کند تا پس از هر بار روشن شدن سیستم به طور خودکار اجرا شود'
+            )
+        form.addRow('استارتاپ:', self.chk_autorun)
+
+        # Minimized-to-tray on autorun hint
+        self.lbl_hint = QLabel('(برنامه در پس‌زمینه شروع می‌شود و در سینی سیستم نمایش داده می‌شود)')
+        self.lbl_hint.setStyleSheet('color: #888; font-size: 11px;')
+        self.lbl_hint.setWordWrap(True)
+        form.addRow('', self.lbl_hint)
 
         main_layout.addLayout(form)
 
@@ -67,17 +85,31 @@ class SettingsDialog(QDialog):
             self.spin_concurrent.setValue(
                 int(settings.get('max_concurrent_downloads', 2))
             )
+            # Read live registry state (source of truth)
+            if sys.platform == 'win32':
+                from safekeep.utils.autorun import is_autorun_enabled
+                self.chk_autorun.setChecked(is_autorun_enabled())
+            else:
+                self.chk_autorun.setChecked(
+                    bool(settings.get('autorun', False))
+                )
         except Exception as exc:
             self.logger.error(f'_load_settings failed: {exc}')
 
     def get_settings(self) -> dict:
-        """
-        Return the current settings as a dict.
-
-        Returns:
-            Dict with log_level and max_concurrent_downloads.
-        """
+        """Return the current settings as a dict."""
         return {
             'log_level': self.combo_log_level.currentText(),
             'max_concurrent_downloads': self.spin_concurrent.value(),
+            'autorun': self.chk_autorun.isChecked(),
         }
+
+    def accept(self) -> None:
+        """Save settings and apply autorun change before closing."""
+        if sys.platform == 'win32':
+            from safekeep.utils.autorun import enable_autorun, disable_autorun
+            if self.chk_autorun.isChecked():
+                enable_autorun()
+            else:
+                disable_autorun()
+        super().accept()

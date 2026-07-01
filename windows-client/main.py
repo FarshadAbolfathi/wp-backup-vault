@@ -21,6 +21,10 @@ def main():
     if sys.platform != 'win32':
         print("Warning: SafeKeep is designed for Windows. Some features may not work correctly.")
 
+    # --minimized flag is passed by the autorun registry entry so the window
+    # starts hidden in the system tray instead of appearing on screen.
+    start_minimized = '--minimized' in sys.argv
+
     lock_socket = check_single_instance()
     if lock_socket is None:
         from PySide6.QtWidgets import QApplication, QMessageBox
@@ -75,7 +79,13 @@ def main():
     site_manager = SiteManager(config)
 
     window = MainWindow(site_manager, config)
-    window.show()
+
+    if start_minimized:
+        # Start hidden in the system tray (autorun scenario)
+        logger.info('Starting minimized to tray (autorun mode).')
+        window.hide()
+    else:
+        window.show()
 
     exit_code = app.exec()
     if lock_socket:
