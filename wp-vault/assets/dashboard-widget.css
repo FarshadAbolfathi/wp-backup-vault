@@ -1,0 +1,123 @@
+/* WP Vault — Dashboard Widget Styles
+ * Farshad Abolfathi — https://www.linkedin.com/in/farshad-abolfathi/
+ */
+
+.wvb-dash-link {
+    display: block;
+    text-decoration: none !important;
+    color: inherit !important;
+    margin: -12px -12px -12px -12px; /* fill the widget card edge-to-edge */
+}
+
+.wvb-dash-widget {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: filter .15s, transform .15s;
+    position: relative;
+    direction: rtl;
+    font-family: Tahoma, Arial, sans-serif;
+}
+
+.wvb-dash-widget:hover {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+}
+
+/* Green — backup found */
+.wvb-dash-ok {
+    background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+    border: 1px solid #a5d6a7;
+}
+
+/* Orange — no backup */
+.wvb-dash-warn {
+    background: linear-gradient(135deg, #fff8e1 0%, #ffe082 100%);
+    border: 1px solid #ffca28;
+}
+
+.wvb-dash-icon {
+    font-size: 36px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.wvb-dash-body {
+    flex: 1;
+}
+
+.wvb-dash-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: #555;
+    margin-bottom: 4px;
+}
+
+.wvb-dash-date {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1b5e20;
+    line-height: 1.2;
+}
+
+.wvb-dash-time {
+    font-size: 15px;
+    color: #388e3c;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+.wvb-dash-warn .wvb-dash-date,
+.wvb-dash-warn .wvb-dash-time {
+    color: #e65100;
+}
+
+.wvb-dash-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.wvb-badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.wvb-badge-green {
+    background: #2e7d32;
+    color: #fff;
+}
+
+.wvb-dash-size {
+    font-size: 12px;
+    color: #555;
+    background: rgba(0,0,0,.07);
+    padding: 2px 8px;
+    border-radius: 20px;
+}
+
+.wvb-dash-ago {
+    font-size: 12px;
+    color: #777;
+}
+
+.wvb-dash-arrow {
+    font-size: 22px;
+    color: rgba(0,0,0,.2);
+    flex-shrink: 0;
+    transition: color .15s;
+}
+
+.wvb-dash-widget:hover .wvb-dash-arrow {
+    color: rgba(0,0,0,.5);
+}

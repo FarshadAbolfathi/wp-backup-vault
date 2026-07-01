@@ -25,6 +25,14 @@
             localStorage.setItem('wvb_active_tab', tab);
         });
 
+        // If redirected from dashboard widget, open the requested tab
+        var urlParams = new URLSearchParams(window.location.search);
+        var forcedTab = urlParams.get('wvb_tab');
+        if (forcedTab) {
+            $('[data-tab="' + forcedTab + '"]').trigger('click');
+            return;
+        }
+
         var saved = localStorage.getItem('wvb_active_tab');
         if (saved) {
             $('[data-tab="' + saved + '"]').trigger('click');

@@ -24,6 +24,7 @@ require_once WVB_PLUGIN_DIR . 'includes/class-backup-engine.php';
 require_once WVB_PLUGIN_DIR . 'includes/class-scheduler.php';
 require_once WVB_PLUGIN_DIR . 'includes/class-api.php';
 require_once WVB_PLUGIN_DIR . 'includes/class-retention.php';
+require_once WVB_PLUGIN_DIR . 'admin/dashboard-widget.php';
 
 register_activation_hook( __FILE__, 'wvb_activate' );
 register_deactivation_hook( __FILE__, 'wvb_deactivate' );
