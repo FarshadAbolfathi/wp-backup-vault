@@ -86,7 +86,7 @@ _STYLESHEET = """
 QMainWindow, QWidget {
     background-color: #1e1e2e;
     color: #cdd6f4;
-    font-family: Tahoma, Arial, sans-serif;
+    font-family: "YekanBakh", Tahoma, Arial, sans-serif;
     font-size: 13px;
 }
 QListWidget {

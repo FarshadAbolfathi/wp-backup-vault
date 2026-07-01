@@ -30,6 +30,7 @@ def main():
 
     from PySide6.QtWidgets import QApplication
     from PySide6.QtCore import Qt
+    from PySide6.QtGui import QFontDatabase, QFont
     from safekeep.core.config import Config
     from safekeep.core.site_manager import SiteManager
     from safekeep.utils.logger import setup_logger
@@ -41,6 +42,26 @@ def main():
     app = QApplication(sys.argv)
     app.setLayoutDirection(Qt.RightToLeft)
     app.setApplicationName('SafeKeep')
+
+    # Load YekanBakh font (bundled inside the exe via PyInstaller)
+    import os, sys as _sys
+    _base = getattr(_sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    _fonts_dir = os.path.join(_base, 'safekeep', 'assets', 'fonts')
+    _loaded_family = None
+    for _fname in ('YekanBakh-Regular.ttf', 'YekanBakh-Bold.ttf'):
+        _fpath = os.path.join(_fonts_dir, _fname)
+        if os.path.exists(_fpath):
+            _fid = QFontDatabase.addApplicationFont(_fpath)
+            if _fid >= 0 and _loaded_family is None:
+                families = QFontDatabase.applicationFontFamilies(_fid)
+                if families:
+                    _loaded_family = families[0]
+    if _loaded_family:
+        _default_font = QFont(_loaded_family, 11)
+        app.setFont(_default_font)
+        logger.info(f'YekanBakh font loaded: {_loaded_family}')
+    else:
+        logger.warning('YekanBakh font not found; falling back to system font.')
     app.setApplicationVersion('1.0.0')
     app.setOrganizationName('Farshad Abolfathi')
 

@@ -23,6 +23,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Download YekanBakh fonts
+        shell: pwsh
+        run: |
+          $base = "https://github.com/saber-rastikerdar/yekanbakh-font/raw/master/fonts/ttf"
+          $dest = "safekeep/assets/fonts"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $files = @(
+            "YekanBakh-Regular.ttf",
+            "YekanBakh-Bold.ttf"
+          )
+          foreach ($f in $files) {
+            Invoke-WebRequest -Uri "$base/$f" -OutFile "$dest/$f"
+            Write-Host "Downloaded $f"
+          }
+
       - name: Build SafeKeep.exe with PyInstaller
         run: >
           pyinstaller

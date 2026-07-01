@@ -37,7 +37,7 @@ class ChunkDownloader:
 
     def _api_url(self, path: str) -> str:
         """Build the full API URL for a given endpoint path."""
-        return f'{self.site_url}/wp-json/wp-vault-bridge/v1/{path.lstrip("/")}'
+        return f'{self.site_url}/wp-json/wp-vault/v1/{path.lstrip("/")}'
 
     # ------------------------------------------------------------------
     # Public API
