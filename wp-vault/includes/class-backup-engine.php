@@ -92,66 +92,65 @@ class WVB_Backup_Engine {
         $sql_file   = $backup_dir . 'db-export.sql';
         $gz_file    = $backup_dir . 'db-export.sql.gz';
 
-        $success = false;
-
-        // Try mysqldump first
-        $cmd = 'mysqldump --no-tablespaces -u ' . escapeshellarg($wpdb->dbuser)
-            . ' -p' . escapeshellarg($wpdb->dbpassword)
-            . ' ' . escapeshellarg($wpdb->dbname)
-            . ' > ' . escapeshellarg($sql_file) . ' 2>/dev/null';
-        exec($cmd, $out, $ret);
-
-        if ($ret === 0 && file_exists($sql_file) && filesize($sql_file) > 0) {
-            $success = true;
+        // Pure-PHP export — shell functions are disabled on many shared hosts
+        $fp = fopen($sql_file, 'w');
+        if (!$fp) {
+            $this->log('export_database: cannot open ' . $sql_file);
+            return;
         }
 
-        // PHP fallback if mysqldump failed or file is empty
-        if (!$success) {
-            $fp = fopen($sql_file, 'w');
-            if ($fp) {
-                fwrite($fp, "-- WP Vault DB Export\n");
-                fwrite($fp, "-- Generated: " . date('Y-m-d H:i:s') . "\n\n");
-                fwrite($fp, "SET FOREIGN_KEY_CHECKS=0;\n\n");
+        fwrite($fp, "-- WP Vault DB Export\n");
+        fwrite($fp, "-- Generated: " . date('Y-m-d H:i:s') . "\n\n");
+        fwrite($fp, "SET FOREIGN_KEY_CHECKS=0;\n\n");
 
-                $tables = $wpdb->get_results('SHOW TABLES', ARRAY_N);
-                foreach ($tables as $row) {
-                    $table  = $row[0];
-                    $create = $wpdb->get_row("SHOW CREATE TABLE `$table`", ARRAY_N);
-                    if ($create) {
-                        fwrite($fp, "DROP TABLE IF EXISTS `$table`;\n");
-                        fwrite($fp, $create[1] . ";\n\n");
-                    }
-                    $offset = 0;
-                    $batch  = 500;
-                    do {
-                        $rows = $wpdb->get_results(
-                            $wpdb->prepare("SELECT * FROM `$table` LIMIT %d OFFSET %d", $batch, $offset),
-                            ARRAY_A
-                        );
-                        if (empty($rows)) break;
-                        $columns = '`' . implode('`, `', array_keys($rows[0])) . '`';
-                        foreach ($rows as $row_data) {
-                            $values = array_map(function ($v) use ($wpdb) {
-                                if ($v === null) return 'NULL';
-                                return "'" . esc_sql($v) . "'";
-                            }, array_values($row_data));
-                            fwrite($fp, "INSERT INTO `$table` ($columns) VALUES (" . implode(', ', $values) . ");\n");
-                        }
-                        $offset += $batch;
-                    } while (count($rows) === $batch);
-                    fwrite($fp, "\n");
-                }
-
-                fwrite($fp, "SET FOREIGN_KEY_CHECKS=1;\n");
-                fclose($fp);
+        $tables = $wpdb->get_results('SHOW TABLES', ARRAY_N);
+        foreach ($tables as $row) {
+            $table  = $row[0];
+            $create = $wpdb->get_row("SHOW CREATE TABLE `{$table}`", ARRAY_N);
+            if ($create) {
+                fwrite($fp, "DROP TABLE IF EXISTS `{$table}`;\n");
+                fwrite($fp, $create[1] . ";\n\n");
             }
+            $offset = 0;
+            $batch  = 200;
+            do {
+                $rows = $wpdb->get_results(
+                    $wpdb->prepare("SELECT * FROM `{$table}` LIMIT %d OFFSET %d", $batch, $offset),
+                    ARRAY_A
+                );
+                if (empty($rows)) break;
+                $columns = '`' . implode('`, `', array_keys($rows[0])) . '`';
+                foreach ($rows as $row_data) {
+                    $values = array_map(function ($v) use ($wpdb) {
+                        if ($v === null) return 'NULL';
+                        return "'" . $wpdb->_escape($v) . "'";
+                    }, array_values($row_data));
+                    fwrite($fp, "INSERT INTO `{$table}` ({$columns}) VALUES (" . implode(', ', $values) . ");\n");
+                }
+                $offset += $batch;
+            } while (count($rows) === $batch);
+            fwrite($fp, "\n");
         }
 
-        // Gzip the SQL file
-        if (file_exists($sql_file)) {
-            $content = file_get_contents($sql_file);
-            file_put_contents($gz_file, gzencode($content, 6));
-            unlink($sql_file);
+        fwrite($fp, "SET FOREIGN_KEY_CHECKS=1;\n");
+        fclose($fp);
+
+        // Gzip in chunks to avoid loading the whole SQL into memory
+        if (file_exists($sql_file) && filesize($sql_file) > 0) {
+            $gz = gzopen($gz_file, 'wb6');
+            if ($gz) {
+                $in = fopen($sql_file, 'rb');
+                while (!feof($in)) {
+                    gzwrite($gz, fread($in, 65536));
+                }
+                fclose($in);
+                gzclose($gz);
+                unlink($sql_file);
+            } else {
+                // gzip unavailable — keep the plain .sql
+                rename($sql_file, $backup_dir . 'db-export.sql');
+                $gz_file = $backup_dir . 'db-export.sql';
+            }
         }
 
         $this->log('Database exported: ' . basename($gz_file));
