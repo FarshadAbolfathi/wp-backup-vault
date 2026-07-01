@@ -11,6 +11,12 @@ if ( isset( $_POST['wvb_save_settings'] ) ) {
     $saved_msg = 'تنظیمات ذخیره شد.';
 }
 
+// Show a notice if WP Cron might be disabled
+$cron_notice = '';
+if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) {
+    $cron_notice = 'هشدار: WP-Cron در این سایت غیرفعال است (DISABLE_WP_CRON=true). برای اجرای خودکار بک‌آپ، یک Cron Job واقعی روی سرور تنظیم کنید که هر ۵ دقیقه آدرس زیر را فراخوانی کند: ' . site_url( 'wp-cron.php?doing_wp_cron=1' );
+}
+
 $settings       = new WVB_Settings();
 $engine         = new WVB_Backup_Engine();
 $all_backups    = $engine->get_all_backups();
@@ -25,6 +31,10 @@ $masked_key = ( strlen( $api_key ) >= 4 )
     : '****';
 ?>
 <div class="wvb-wrap" dir="rtl" lang="fa">
+
+    <?php if ( $cron_notice ) : ?>
+        <div class="wvb-notice wvb-notice-error" style="margin-bottom:12px;"><?php echo esc_html( $cron_notice ); ?></div>
+    <?php endif; ?>
 
     <div class="wvb-header">
         <h1>WP Vault</h1>
