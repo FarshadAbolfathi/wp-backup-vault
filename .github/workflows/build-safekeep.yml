@@ -25,17 +25,46 @@ jobs:
 
       - name: Download YekanBakh fonts
         shell: pwsh
+        continue-on-error: true
         run: |
-          $base = "https://github.com/saber-rastikerdar/yekanbakh-font/raw/master/fonts/ttf"
           $dest = "safekeep/assets/fonts"
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
-          $files = @(
-            "YekanBakh-Regular.ttf",
-            "YekanBakh-Bold.ttf"
+          # Try multiple mirror URLs for YekanBakh font
+          $variants = @(
+            @{name="YekanBakh-Regular.ttf"; urls=@(
+              "https://github.com/rastikerdar/yekanbakh-font/raw/main/fonts/ttf/YekanBakh-Regular.ttf",
+              "https://github.com/saber-rastikerdar/yekanbakh-font/raw/main/fonts/ttf/YekanBakh-Regular.ttf",
+              "https://cdn.jsdelivr.net/gh/rastikerdar/yekanbakh-font@latest/fonts/ttf/YekanBakh-Regular.ttf"
+            )},
+            @{name="YekanBakh-Bold.ttf"; urls=@(
+              "https://github.com/rastikerdar/yekanbakh-font/raw/main/fonts/ttf/YekanBakh-Bold.ttf",
+              "https://github.com/saber-rastikerdar/yekanbakh-font/raw/main/fonts/ttf/YekanBakh-Bold.ttf",
+              "https://cdn.jsdelivr.net/gh/rastikerdar/yekanbakh-font@latest/fonts/ttf/YekanBakh-Bold.ttf"
+            )}
           )
-          foreach ($f in $files) {
-            Invoke-WebRequest -Uri "$base/$f" -OutFile "$dest/$f"
-            Write-Host "Downloaded $f"
+          foreach ($v in $variants) {
+            $saved = $false
+            foreach ($url in $v.urls) {
+              try {
+                $tmp = "$dest/$($v.name).tmp"
+                Invoke-WebRequest -Uri $url -OutFile $tmp -TimeoutSec 20 -ErrorAction Stop
+                $bytes = [System.IO.File]::ReadAllBytes($tmp)
+                # Verify it's a TTF (magic bytes: 00 01 00 00 or 4F 54 54 4F)
+                if (($bytes[0] -eq 0x00 -and $bytes[1] -eq 0x01) -or
+                    ($bytes[0] -eq 0x4F -and $bytes[1] -eq 0x54)) {
+                  Move-Item -Force $tmp "$dest/$($v.name)"
+                  Write-Host "Downloaded $($v.name) from $url"
+                  $saved = $true
+                  break
+                } else {
+                  Write-Host "Not a valid TTF from $url, trying next..."
+                  Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+                }
+              } catch {
+                Write-Host "Failed $url : $_"
+              }
+            }
+            if (-not $saved) { Write-Host "WARNING: Could not download $($v.name) — will use system font fallback" }
           }
 
       - name: Build SafeKeep.exe with PyInstaller
