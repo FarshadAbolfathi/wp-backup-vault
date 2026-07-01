@@ -160,42 +160,59 @@ class WVB_Backup_Engine {
     public function collect_files($backup_id) {
         $files       = [];
         $content_dir = WP_CONTENT_DIR;
-        $exclude     = [];
-        $real_backup = realpath(WVB_BACKUPS_DIR);
-        if ($real_backup) {
-            $exclude[] = $real_backup;
-        }
 
-        $dir_iter = new RecursiveDirectoryIterator(
-            $content_dir,
-            RecursiveDirectoryIterator::SKIP_DOTS
-        );
-        $iter = new RecursiveIteratorIterator($dir_iter, RecursiveIteratorIterator::SELF_FIRST);
+        // Directories to skip (cache, logs, temp, and our own backup folder)
+        $skip_dirnames = [
+            'cache', 'et-cache', 'wc-logs', 'woocommerce_uploads', 'wpml',
+            'backups', 'backup', 'updraft', 'wp-rocket-cache', 'wp-cache',
+            '.git', '.svn', 'node_modules', 'tmp', 'temp',
+        ];
 
-        foreach ($iter as $file) {
-            // Skip .git directories
-            if ($file->isDir() && $file->getBasename() === '.git') {
-                $iter->next();
-                continue;
-            }
-            if (!$file->isFile()) continue;
+        $exclude_real = [];
+        $real_backup  = realpath(WVB_BACKUPS_DIR);
+        if ($real_backup) $exclude_real[] = $real_backup;
 
-            $path = $file->getPathname();
+        try {
+            $dir_iter = new RecursiveDirectoryIterator(
+                $content_dir,
+                RecursiveDirectoryIterator::SKIP_DOTS | RecursiveDirectoryIterator::FOLLOW_SYMLINKS
+            );
+            $iter = new RecursiveIteratorIterator(
+                $dir_iter,
+                RecursiveIteratorIterator::SELF_FIRST
+            );
+            $iter->setMaxDepth(10);
 
-            // Skip files in excluded dirs
-            $skip = false;
-            foreach ($exclude as $ex) {
-                if (strpos(realpath($path) ?: $path, $ex) === 0) {
-                    $skip = true;
-                    break;
+            foreach ($iter as $file) {
+                if ($file->isDir()) {
+                    $base = strtolower($file->getBasename());
+                    if (in_array($base, $skip_dirnames, true)) {
+                        $iter->getInnerIterator()->rewind();
+                        $iter->next();
+                        continue;
+                    }
+                    continue;
                 }
+
+                if (!$file->isFile() || !$file->isReadable()) continue;
+
+                $path      = $file->getPathname();
+                $real_path = realpath($path) ?: $path;
+
+                // Skip files inside excluded directories
+                $skip = false;
+                foreach ($exclude_real as $ex) {
+                    if (strpos($real_path, $ex) === 0) { $skip = true; break; }
+                }
+                if ($skip) continue;
+
+                // Skip files > 500 MB
+                if ($file->getSize() > 500 * 1024 * 1024) continue;
+
+                $files[] = $path;
             }
-            if ($skip) continue;
-
-            // Skip files > 500MB
-            if ($file->getSize() > 500 * 1024 * 1024) continue;
-
-            $files[] = $path;
+        } catch (Exception $e) {
+            $this->log('collect_files error: ' . $e->getMessage());
         }
 
         set_transient('wvb_files_' . $backup_id, $files, HOUR_IN_SECONDS * 2);

@@ -77,13 +77,22 @@ add_action( 'admin_enqueue_scripts', function( $hook ) {
 } );
 
 add_action( 'wp_ajax_wvb_start_backup', function() {
+    while ( ob_get_level() ) ob_end_clean();
+    ob_start();
     check_ajax_referer( 'wvb_nonce', 'nonce' );
     if ( ! current_user_can( 'manage_options' ) ) {
+        ob_end_clean();
         wp_send_json_error( array( 'message' => 'Unauthorized' ) );
     }
-    $engine = new WVB_Backup_Engine();
-    $backup_id = $engine->start_backup();
-    wp_send_json_success( array( 'backup_id' => $backup_id ) );
+    try {
+        $engine    = new WVB_Backup_Engine();
+        $backup_id = $engine->start_backup();
+        ob_end_clean();
+        wp_send_json_success( array( 'backup_id' => $backup_id ) );
+    } catch ( Throwable $e ) {
+        ob_end_clean();
+        wp_send_json_error( array( 'message' => $e->getMessage() ) );
+    }
 } );
 
 add_action( 'wp_ajax_wvb_get_progress', function() {
@@ -98,14 +107,36 @@ add_action( 'wp_ajax_wvb_get_progress', function() {
 } );
 
 add_action( 'wp_ajax_wvb_process_step', function() {
+    // Clean any stray output that would corrupt the JSON response
+    while ( ob_get_level() ) ob_end_clean();
+    ob_start();
+
     check_ajax_referer( 'wvb_nonce', 'nonce' );
     if ( ! current_user_can( 'manage_options' ) ) {
+        ob_end_clean();
         wp_send_json_error( array( 'message' => 'Unauthorized' ) );
     }
+
+    // Give the step more room on shared hosting
+    @ini_set( 'memory_limit', '512M' );
+    @set_time_limit( 300 );
+
     $backup_id = sanitize_text_field( $_POST['backup_id'] ?? '' );
-    $engine = new WVB_Backup_Engine();
-    $result = $engine->process_step( $backup_id );
-    wp_send_json_success( $result );
+    if ( ! $backup_id ) {
+        ob_end_clean();
+        wp_send_json_error( array( 'message' => 'Missing backup_id' ) );
+    }
+
+    try {
+        $engine = new WVB_Backup_Engine();
+        $result = $engine->process_step( $backup_id );
+        ob_end_clean();
+        wp_send_json_success( $result );
+    } catch ( Throwable $e ) {
+        ob_end_clean();
+        ( new WVB_Settings() )->append_log( 'process_step exception: ' . $e->getMessage() );
+        wp_send_json_error( array( 'message' => $e->getMessage(), 'step' => 'error' ) );
+    }
 } );
 
 /**
