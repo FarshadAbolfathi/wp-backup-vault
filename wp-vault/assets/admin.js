@@ -48,6 +48,8 @@
         });
     }
 
+    var pollTimer = null;
+
     function startBackup() {
         $('#start-backup-btn').prop('disabled', true).text('در حال بک‌آپ...');
         showStatus(wvbData.strings.backup_started, 'info');
@@ -58,92 +60,75 @@
         $.ajax({
             url: wvbData.ajax_url,
             method: 'POST',
-            data: {
-                action: 'wvb_start_backup',
-                nonce: wvbData.nonce
-            },
+            data: { action: 'wvb_start_backup', nonce: wvbData.nonce },
             success: function (res) {
                 if (res && res.success && res.data && res.data.backup_id) {
-                    processNextStep(res.data.backup_id, 0);
+                    // Backup launched in background — start polling for progress
+                    pollProgress(res.data.backup_id, 0);
                 } else {
                     handleBackupError(res && res.data && res.data.message ? res.data.message : null);
                 }
             },
             error: function (xhr) {
-                var msg = null;
-                try {
-                    var parsed = JSON.parse(xhr.responseText);
-                    if (parsed && parsed.data && parsed.data.message) { msg = parsed.data.message; }
-                } catch (e) {
-                    if (xhr.responseText) {
-                        var tmp = document.createElement('div');
-                        tmp.innerHTML = xhr.responseText;
-                        var plain = (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
-                        if (plain.length > 0) { msg = plain.substring(0, 400); }
-                    }
-                }
-                handleBackupError(msg);
+                handleBackupError(extractErrorMsg(xhr));
             }
         });
     }
 
-    function processNextStep(backup_id, attempt) {
-        if (attempt > 20) {
-            handleBackupError('max attempts reached');
+    function pollProgress(backup_id, ticks) {
+        if (ticks > 120) { // 120 × 5s = 10 min max
+            handleBackupError('تایم‌اوت: بک‌آپ پس از ۱۰ دقیقه کامل نشد');
             return;
         }
-
-        $.ajax({
-            url: wvbData.ajax_url,
-            method: 'POST',
-            data: {
-                action: 'wvb_process_step',
-                nonce: wvbData.nonce,
-                backup_id: backup_id
-            },
-            success: function (res) {
-                if (!res || !res.success) {
-                    handleBackupError(res && res.data && res.data.message ? res.data.message : null);
-                    return;
-                }
-
-                var data = res.data;
-                updateProgress(data.progress, getStepLabel(data.step));
-
-                if (data.step === 'complete') {
-                    $('.wvb-progress-bar').removeClass('animating');
-                    updateProgress(100, 'بک‌آپ کامل شد');
-                    showStatus(wvbData.strings.backup_complete, 'success');
-                    enableButton();
-                    return;
-                }
-
-                setTimeout(function () {
-                    processNextStep(backup_id, attempt + 1);
-                }, 1000);
-            },
-            error: function (xhr) {
-                // Try to extract a useful error message from the raw server response
-                var msg = null;
-                try {
-                    var parsed = JSON.parse(xhr.responseText);
-                    if (parsed && parsed.data && parsed.data.message) {
-                        msg = parsed.data.message;
+        pollTimer = setTimeout(function () {
+            $.ajax({
+                url: wvbData.ajax_url,
+                method: 'POST',
+                data: { action: 'wvb_get_progress', nonce: wvbData.nonce, backup_id: backup_id },
+                success: function (res) {
+                    if (!res || !res.success) {
+                        handleBackupError(res && res.data && res.data.message ? res.data.message : null);
+                        return;
                     }
-                } catch (e) {
-                    // Raw PHP output (e.g. fatal error) — strip HTML and show plain text
-                    if (xhr.responseText) {
-                        var tmp = document.createElement('div');
-                        tmp.innerHTML = xhr.responseText;
-                        var plain = (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
-                        if (plain.length > 0) {
-                            msg = plain.substring(0, 300);
-                        }
+                    var data = res.data;
+                    var pct  = data.progress || 0;
+                    var step = data.step     || '';
+
+                    updateProgress(pct, getStepLabel(step));
+
+                    if (data.status === 'complete') {
+                        $('.wvb-progress-bar').removeClass('animating');
+                        updateProgress(100, 'بک‌آپ کامل شد');
+                        showStatus(wvbData.strings.backup_complete, 'success');
+                        enableButton();
+                        return;
                     }
+                    if (data.status === 'failed') {
+                        handleBackupError(data.error || 'بک‌آپ با خطا متوقف شد');
+                        return;
+                    }
+                    // Still running — poll again
+                    pollProgress(backup_id, ticks + 1);
+                },
+                error: function (xhr) {
+                    handleBackupError(extractErrorMsg(xhr));
                 }
-                handleBackupError(msg);
-            }
-        });
+            });
+        }, 4000); // poll every 4 seconds
+    }
+
+    function extractErrorMsg(xhr) {
+        try {
+            var parsed = JSON.parse(xhr.responseText);
+            if (parsed && parsed.data && parsed.data.message) return parsed.data.message;
+        } catch (e) {}
+        if (xhr.responseText) {
+            var tmp = document.createElement('div');
+            tmp.innerHTML = xhr.responseText;
+            var plain = (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+            if (plain.length > 0) return plain.substring(0, 400);
+        }
+        return null;
     }
 
     function getStepLabel(step) {
