@@ -69,15 +69,27 @@
                     handleBackupError(res && res.data && res.data.message ? res.data.message : null);
                 }
             },
-            error: function () {
-                handleBackupError();
+            error: function (xhr) {
+                var msg = null;
+                try {
+                    var parsed = JSON.parse(xhr.responseText);
+                    if (parsed && parsed.data && parsed.data.message) { msg = parsed.data.message; }
+                } catch (e) {
+                    if (xhr.responseText) {
+                        var tmp = document.createElement('div');
+                        tmp.innerHTML = xhr.responseText;
+                        var plain = (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+                        if (plain.length > 0) { msg = plain.substring(0, 400); }
+                    }
+                }
+                handleBackupError(msg);
             }
         });
     }
 
     function processNextStep(backup_id, attempt) {
         if (attempt > 20) {
-            handleBackupError('max attempts');
+            handleBackupError('max attempts reached');
             return;
         }
 
@@ -110,8 +122,26 @@
                     processNextStep(backup_id, attempt + 1);
                 }, 1000);
             },
-            error: function () {
-                handleBackupError();
+            error: function (xhr) {
+                // Try to extract a useful error message from the raw server response
+                var msg = null;
+                try {
+                    var parsed = JSON.parse(xhr.responseText);
+                    if (parsed && parsed.data && parsed.data.message) {
+                        msg = parsed.data.message;
+                    }
+                } catch (e) {
+                    // Raw PHP output (e.g. fatal error) — strip HTML and show plain text
+                    if (xhr.responseText) {
+                        var tmp = document.createElement('div');
+                        tmp.innerHTML = xhr.responseText;
+                        var plain = (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+                        if (plain.length > 0) {
+                            msg = plain.substring(0, 300);
+                        }
+                    }
+                }
+                handleBackupError(msg);
             }
         });
     }
