@@ -297,6 +297,12 @@ body {
     border-left: 4px solid #28a745;
 }
 
+.wvb-notice-error {
+    background: #f8d7da;
+    color: #721c24;
+    border-left: 4px solid #d63638;
+}
+
 .wvb-footer {
     margin-top: 30px;
     padding-top: 15px;
